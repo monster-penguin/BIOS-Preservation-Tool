@@ -690,6 +690,30 @@ def run(config: configparser.ConfigParser, base_dir: str = ".") -> bool:
             f"({missing_count} missing, {mismatch_count} hash_mismatch, {unverif_count} unverifiable)"
         )
 
+        # Write per-status subset CSVs
+        HEADERS = ["Known Aliases", "Expected MD5", "Status", "Platforms", "Actual MD5"]
+        subsets = [
+            ("missing",       "shopping_missing.csv",       missing_count),
+            ("hash_mismatch", "shopping_hash_mismatch.csv", mismatch_count),
+            ("unverifiable",  "shopping_unverifiable.csv",  unverif_count),
+        ]
+        for status_key, filename, count in subsets:
+            subset_path = os.path.join(report_dir, filename)
+            with open(subset_path, "w", newline="", encoding="utf-8") as fh:
+                writer = csv.writer(fh)
+                writer.writerow(HEADERS)
+                for canonical, data in sorted(shopping.items()):
+                    if data["status"] != status_key:
+                        continue
+                    writer.writerow([
+                        ", ".join(sorted(data["filenames"])),
+                        data["expected_md5"],
+                        data["status"],
+                        ", ".join(sorted(data["platforms"])),
+                        data["actual_md5"],
+                    ])
+            print(f"  {status_key:<16} → {subset_path}  ({count} rows)")
+
     conn.close()
     print("[report] Done.")
     return overall_ok
