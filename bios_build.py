@@ -820,6 +820,16 @@ class Scanner:
         if existing_best == "verified" and new_status != "verified":
             return False
 
+        # For non-verified blobs, do not accumulate multiple copies per canonical.
+        # Only verified blobs may coexist (regional variants with distinct MD5s).
+        # A strict status upgrade (e.g. mismatch_accepted → unverifiable) is still
+        # allowed; anything equal-or-worse is rejected so that duplicate unverifiable
+        # or mismatch_accepted files sourced from different archives don't pile up,
+        # cause bloat in the sqlar, and create path collisions during the dump stage.
+        if new_status != "verified" and existing_best and existing_best != "verified":
+            if STATUS_RANK.get(new_status, 99) >= STATUS_RANK.get(existing_best, 99):
+                return False
+
         return True
 
     def _store(
@@ -1353,3 +1363,4 @@ if __name__ == "__main__":
         cfg.read(str(user_conf), encoding="utf-8")
         print(f"[launcher] Using user configuration: {user_conf}")
     sys.exit(0 if run(cfg, base_dir) else 1)
+
