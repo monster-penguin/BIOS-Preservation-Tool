@@ -252,6 +252,10 @@ One row per distinct declared MD5 that is not yet stored as verified.
 | `Platforms` | Comma-sorted platform display names |
 | `Actual MD5` | MD5 of what is currently stored, or `not present` |
 
+### `report/shopping_missing.csv` / `shopping_hash_mismatch.csv` / `shopping_unverifiable.csv`
+
+Pre-filtered subsets of `global_shopping_list.csv`, one file per status value. Written in the same Report run, immediately after the global list. Schema is identical — same five columns, same sort order (canonical name). Intended for focused triage: hand the mismatch file to someone hunting wrong-version files, the missing file to someone assembling a collection from scratch, and so on.
+
 ---
 
 ## Implementation Notes
@@ -289,7 +293,7 @@ Non-verified blobs (`unverifiable`, `mismatch_accepted`) are limited to one per 
 ### 8. `_should_store()` logic
 
 Three conditions must all pass for a blob to be stored:
-1. This exact MD5 is not already stored with the same status
+1. This exact MD5 is not already stored **for this canonical** with the same status. The check is scoped to `canonical_name` — if the same MD5 is already stored under a *different* canonical, condition 1 passes so that `_store()` can run and register the alias in `canonical_aliases`. An unscoped check would silently block alias registration for any file whose bytes are already present under another name.
 2. The incoming status is not lower than the best existing status for this canonical (no downgrading a verified canonical with unverifiable/mismatch data)
 3. For non-verified blobs: no blob of equal or better non-verified status already exists for this canonical. Only `verified` blobs may coexist (regional variants with distinct MD5s). A strict status upgrade (e.g. `mismatch_accepted` → `unverifiable`) is allowed; a same-status or lower-status duplicate is rejected. This prevents duplicate `unverifiable` or `mismatch_accepted` blobs from accumulating across multiple source scans, which would cause sqlar bloat and path collisions during the dump stage.
 
@@ -315,7 +319,7 @@ The cache directory is named `yaml_cache/` rather than `yaml/`. Python treats an
 
 ### 14. Alias canonical lookup
 
-When `_store()` finds that the incoming blob's MD5 already exists in `sqlar` under a different `canonical_name`, it records the new name in `canonical_aliases` (rather than overwriting the existing entry). `_get_file_rows()` in `bios_report.py` uses `canonical_aliases` as its 4th fallback lookup, after direct canonical name, hash-based, and `database_filename` lookups all fail. `write_build_manifest()` also joins against `canonical_aliases` to fill `database_filename` for alias canonicals.
+When `_store()` finds that the incoming blob's MD5 already exists in `sqlar` under a different `canonical_name`, it records the new name in `canonical_aliases` (rather than overwriting the existing entry). For this to happen, `_should_store()` must first return `True` — which is why its MD5 duplicate check (condition 1) is scoped to the same `canonical_name`. Without that scope, a file matched by filename to canonical B whose bytes are already stored under canonical A would be silently dropped by `_should_store()`, and the alias would never be recorded. `_get_file_rows()` in `bios_report.py` uses `canonical_aliases` as its 4th fallback lookup, after direct canonical name, hash-based, and `database_filename` lookups all fail. `write_build_manifest()` also joins against `canonical_aliases` to fill `database_filename` for alias canonicals.
 
 The `canonical_aliases` table is populated only during active scanning. On a fresh database it will be empty until the first build run. A full rebuild (`incremental = false`) guarantees complete population.
 
