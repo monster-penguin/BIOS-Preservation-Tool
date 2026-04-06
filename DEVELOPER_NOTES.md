@@ -280,15 +280,18 @@ Status rank: `verified (1) > unverifiable (2) > mismatch_accepted (3)`. A lower 
 
 Two `verified` blobs for the same canonical (different MD5s) coexist without one superseding the other. `_cleanup_superseded()` only removes `mismatch_accepted` blobs when a `verified` copy exists — it never removes a `verified` blob to make room for another `verified` blob.
 
+Non-verified blobs (`unverifiable`, `mismatch_accepted`) are limited to one per canonical. If a second non-verified blob arrives for the same canonical, `_should_store()` rejects it unless it is a strict status upgrade (e.g. `mismatch_accepted` → `unverifiable`). This constraint prevents duplicate blobs with the same canonical name from colliding in the dump zip and from causing false inflation in collection counts.
+
 ### 7. Pre-existing snapshot for upgrade counting
 
 `Scanner.__init__` takes a `pre_existing` snapshot (`frozenset(found)`) before scanning begins. The `total_upgraded` counter is only incremented when the canonical was in `pre_existing`. This prevents pass 1 → pass 2 within-run promotions from being counted as cross-run upgrades.
 
 ### 8. `_should_store()` logic
 
-Two conditions must both pass for a blob to be stored:
+Three conditions must all pass for a blob to be stored:
 1. This exact MD5 is not already stored with the same status
 2. The incoming status is not lower than the best existing status for this canonical (no downgrading a verified canonical with unverifiable/mismatch data)
+3. For non-verified blobs: no blob of equal or better non-verified status already exists for this canonical. Only `verified` blobs may coexist (regional variants with distinct MD5s). A strict status upgrade (e.g. `mismatch_accepted` → `unverifiable`) is allowed; a same-status or lower-status duplicate is rejected. This prevents duplicate `unverifiable` or `mismatch_accepted` blobs from accumulating across multiple source scans, which would cause sqlar bloat and path collisions during the dump stage.
 
 ### 9. Source management and persistence
 
