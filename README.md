@@ -364,7 +364,15 @@ Report columns:
 
 **Global shopping list** (`report/global_shopping_list.csv`):
 
-One row per declared MD5 value across all platforms combined, for files that need attention:
+One row per declared MD5 value across all platforms combined, for files that need attention. Three filtered subsets are also written to the same folder:
+
+- `shopping_missing.csv` — files not found in any source
+- `shopping_hash_mismatch.csv` — files present but hash doesn't match any declared value
+- `shopping_unverifiable.csv` — files present but no declared hash to verify against
+
+All four files share identical columns; the subsets are pre-filtered views of the global list.
+
+Each row represents a distinct declared MD5 that still needs attention:
 
 | Status | Meaning |
 |--------|---------|
