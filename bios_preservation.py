@@ -26,7 +26,7 @@ import sys
 import traceback
 from pathlib import Path
 
-VALID_STEPS = ("update", "build", "stage", "report")
+VALID_STEPS = ("update", "build", "stage", "report", "backup", "restore")
 
 # Menu entries: (display label, step key)
 MENU_ITEMS = [
@@ -35,7 +35,7 @@ MENU_ITEMS = [
     ("Stage",     "stage"),
     ("Report",    "report"),
     ("Backup",    "backup"),
-    ("Dump",      "dump"),
+    ("Restore",   "restore"),
     ("Configure", "configure"),
 ]
 
@@ -239,7 +239,7 @@ def _files_to_check(step: str, config: configparser.ConfigParser, base_dir: str)
         ]
         return [r(sqlar), r(mf)] + enabled_csvs
 
-    if step in ("backup", "dump"):
+    if step in ("backup", "restore"):
         sqlar = config.get("build", "sqlar_output", fallback="build/bios_database.sqlar")
         return [r(sqlar)]
 
@@ -288,9 +288,9 @@ def _run_step(step: str, config: configparser.ConfigParser, base_dir: str) -> bo
         elif step == "backup":
             import bios_backup
             return bios_backup.run(config, base_dir)
-        elif step == "dump":
-            import bios_dump
-            return bios_dump.run(config, base_dir)
+        elif step == "restore":
+            import bios_restore
+            return bios_restore.run(config, base_dir)
         elif step == "configure":
             import bios_configure
             return bios_configure.run(config, base_dir)
