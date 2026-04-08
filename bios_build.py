@@ -343,10 +343,11 @@ def store_file(
 
 
 def remove_sqlar_entry(conn: sqlite3.Connection, sqlar_name: str) -> None:
-    conn.execute("DELETE FROM sqlar          WHERE name       = ?", (sqlar_name,))
-    conn.execute("DELETE FROM files          WHERE sqlar_name = ?", (sqlar_name,))
-    conn.execute("DELETE FROM file_platforms WHERE sqlar_name = ?", (sqlar_name,))
-    conn.execute("DELETE FROM accepted_hashes WHERE sqlar_name = ?", (sqlar_name,))
+    conn.execute("DELETE FROM sqlar             WHERE name       = ?", (sqlar_name,))
+    conn.execute("DELETE FROM files             WHERE sqlar_name = ?", (sqlar_name,))
+    conn.execute("DELETE FROM file_platforms    WHERE sqlar_name = ?", (sqlar_name,))
+    conn.execute("DELETE FROM accepted_hashes   WHERE sqlar_name = ?", (sqlar_name,))
+    conn.execute("DELETE FROM canonical_aliases WHERE sqlar_name = ?", (sqlar_name,))
 
 
 # ---------------------------------------------------------------------------
@@ -688,14 +689,6 @@ class Scanner:
                 member_name = info.filename.split("/")[-1]
                 data = zf.read(info.filename)
 
-                # Restore canonical alias mappings from a dump sidecar.  This
-                # file is written by bios_dump.py to preserve alias relationships
-                # that have no declared MD5 and cannot be re-established by
-                # filename or hash matching alone.
-                if info.filename == ".aliases.json":
-                    self._restore_aliases(data)
-                    continue
-
                 # Always try to match the member as a file (handles .zip BIOS like neogeo.zip)
                 self._process_bytes(member_name, data,
                                     source_label=f"{label}!{info.filename}", depth=depth)
@@ -703,34 +696,6 @@ class Scanner:
                 if _is_archive(member_name):
                     self._scan_archive_bytes(member_name, data, depth + 1, label)
 
-    def _restore_aliases(self, data: bytes) -> None:
-        """Restore canonical_aliases entries from a dump sidecar (.aliases.json)."""
-        try:
-            entries = json.loads(data.decode("utf-8"))
-        except Exception as exc:
-            print(f"  WARNING: could not parse .aliases.json sidecar: {exc}")
-            return
-        restored = 0
-        for entry in entries:
-            canonical = entry.get("canonical_name", "")
-            sqlar_name = entry.get("sqlar_name", "")
-            if not canonical or not sqlar_name:
-                continue
-            # Only restore the alias if the target sqlar blob actually exists
-            exists = self.conn.execute(
-                "SELECT 1 FROM sqlar WHERE name = ?", (sqlar_name,)
-            ).fetchone()
-            if exists:
-                self.conn.execute(
-                    "INSERT OR IGNORE INTO canonical_aliases (canonical_name, sqlar_name) "
-                    "VALUES (?, ?)",
-                    (canonical, sqlar_name),
-                )
-                self.found.add(canonical)
-                restored += 1
-        if restored:
-            self.conn.commit()
-            print(f"  [aliases] Restored {restored} alias mapping(s) from dump sidecar.")
 
     def _scan_7z(self, path: str, depth: int, label: str) -> None:
         if not HAS_7Z:
@@ -916,6 +881,22 @@ class Scanner:
                 "VALUES (?, ?)",
                 (canonical, sqlar_name),
             )
+            # The canonical now resolves via a verified alias.  If it still has a
+            # lower-status direct blob in files (e.g. mismatch_accepted from a
+            # previous scan of the wrong version), remove it so the canonical is
+            # no longer counted as mismatch in the collection summary.
+            alias_status_row = self.conn.execute(
+                "SELECT status FROM files WHERE sqlar_name = ?", (sqlar_name,)
+            ).fetchone()
+            alias_status = alias_status_row[0] if alias_status_row else None
+            if alias_status:
+                old_blobs = self.conn.execute(
+                    "SELECT sqlar_name, status FROM files WHERE canonical_name = ?",
+                    (canonical,),
+                ).fetchall()
+                for old_sqlar, old_status in old_blobs:
+                    if STATUS_RANK.get(alias_status, 99) < STATUS_RANK.get(old_status, 99):
+                        remove_sqlar_entry(self.conn, old_sqlar)
             self.conn.commit()
             self.found.add(canonical)
             return
@@ -1108,6 +1089,167 @@ def populate_missing_files(
                 ),
             )
     conn.commit()
+
+
+# ---------------------------------------------------------------------------
+# Alias reconciliation
+# ---------------------------------------------------------------------------
+
+def reconcile_aliases(
+    conn: sqlite3.Connection,
+    canonical_map: dict,
+) -> None:
+    """
+    Post-scan reconciliation pass.  Finds canonical names whose physical
+    content is already stored under a different canonical, registers them in
+    canonical_aliases, and removes stale wrong-version blobs.
+
+    Three cases handled (MD5-based matching only):
+
+    Case 1 — Never ingested, declared MD5 matches a stored blob:
+        The canonical has no row in files and no alias entry.  A declared MD5
+        for that canonical is found stored under a different canonical_name.
+        Action: insert canonical_aliases row, delete from missing_files.
+
+    Case 2 — Ingested as mismatch_accepted, declared MD5 verified elsewhere:
+        A mismatch blob exists because the wrong-version file was scanned first.
+        The correct MD5 (as declared in the manifest for this canonical) is
+        already stored as verified under a different canonical_name.
+        Action: remove stale mismatch blob from files+sqlar, insert alias.
+
+    Case 3 — Ingested as unverifiable, actual MD5 verified elsewhere:
+        An unverifiable blob exists (no declared hashes for this canonical).
+        The blob's actual stored MD5 matches a verified blob stored under a
+        different canonical_name — meaning the correct bytes are already present.
+        Action: remove stale unverifiable blob from files+sqlar, insert alias.
+    """
+    print("\n[build] Running alias reconciliation pass …")
+    registered = 0
+    cleaned    = 0
+
+    # ── Case 1 — uningested canonicals whose declared MD5 is already stored ──
+    in_files   = {row[0] for row in conn.execute("SELECT canonical_name FROM files")}
+    in_aliases = {row[0] for row in conn.execute("SELECT canonical_name FROM canonical_aliases")}
+    accounted  = in_files | in_aliases
+
+    for canonical, fdata in canonical_map.items():
+        if canonical in accounted:
+            continue
+        declared_md5s: set[str] = set()
+        for p in PLATFORMS:
+            pinfo = (fdata.get("platforms") or {}).get(p) or {}
+            for hv in (pinfo.get("expected_hashes") or {}).get("md5", []):
+                if hv:
+                    declared_md5s.add(hv.lower())
+        if not declared_md5s:
+            continue
+
+        for md5 in declared_md5s:
+            row = conn.execute(
+                "SELECT sqlar_name, canonical_name FROM files WHERE md5 = ?",
+                (md5,),
+            ).fetchone()
+            if row:
+                sqlar_name, primary = row
+                conn.execute(
+                    "INSERT OR IGNORE INTO canonical_aliases "
+                    "(canonical_name, sqlar_name) VALUES (?, ?)",
+                    (canonical, sqlar_name),
+                )
+                conn.execute(
+                    "DELETE FROM missing_files WHERE canonical_name = ?",
+                    (canonical,),
+                )
+                print(
+                    f"  [reconcile] Case 1: {canonical!r} → alias of "
+                    f"{primary!r}  (md5: {md5})  sqlar: {sqlar_name}"
+                )
+                registered += 1
+                break  # one match is enough
+
+    # ── Case 2 — mismatch_accepted blob whose declared MD5 is verified elsewhere ──
+    mismatch_rows = conn.execute(
+        "SELECT sqlar_name, canonical_name FROM files WHERE status = 'mismatch_accepted'"
+    ).fetchall()
+
+    for sqlar_name, canonical in mismatch_rows:
+        fdata = canonical_map.get(canonical) or {}
+        declared_md5s = set()
+        for p in PLATFORMS:
+            pinfo = (fdata.get("platforms") or {}).get(p) or {}
+            for hv in (pinfo.get("expected_hashes") or {}).get("md5", []):
+                if hv:
+                    declared_md5s.add(hv.lower())
+        if not declared_md5s:
+            continue
+
+        for md5 in declared_md5s:
+            row = conn.execute(
+                "SELECT sqlar_name, canonical_name FROM files "
+                "WHERE md5 = ? AND canonical_name != ? AND status = 'verified'",
+                (md5, canonical),
+            ).fetchone()
+            if row:
+                verified_sqlar, primary = row
+                print(
+                    f"  [reconcile] Case 2: {canonical!r} — removing mismatch blob "
+                    f"{sqlar_name!r}, aliasing to {primary!r}  (md5: {md5})"
+                )
+                remove_sqlar_entry(conn, sqlar_name)
+                conn.execute(
+                    "INSERT OR IGNORE INTO canonical_aliases "
+                    "(canonical_name, sqlar_name) VALUES (?, ?)",
+                    (canonical, verified_sqlar),
+                )
+                conn.execute(
+                    "DELETE FROM missing_files WHERE canonical_name = ?",
+                    (canonical,),
+                )
+                cleaned    += 1
+                registered += 1
+                break
+
+    # ── Case 3 — unverifiable blob whose actual MD5 is verified elsewhere ──
+    unverifiable_rows = conn.execute(
+        "SELECT sqlar_name, canonical_name, md5 FROM files WHERE status = 'unverifiable'"
+    ).fetchall()
+
+    for sqlar_name, canonical, actual_md5 in unverifiable_rows:
+        if not actual_md5:
+            continue
+        row = conn.execute(
+            "SELECT sqlar_name, canonical_name FROM files "
+            "WHERE md5 = ? AND canonical_name != ? AND status = 'verified'",
+            (actual_md5, canonical),
+        ).fetchone()
+        if row:
+            verified_sqlar, primary = row
+            print(
+                f"  [reconcile] Case 3: {canonical!r} — removing unverifiable blob "
+                f"{sqlar_name!r}, aliasing to {primary!r}  (actual md5: {actual_md5})"
+            )
+            remove_sqlar_entry(conn, sqlar_name)
+            conn.execute(
+                "INSERT OR IGNORE INTO canonical_aliases "
+                "(canonical_name, sqlar_name) VALUES (?, ?)",
+                (canonical, verified_sqlar),
+            )
+            conn.execute(
+                "DELETE FROM missing_files WHERE canonical_name = ?",
+                (canonical,),
+            )
+            cleaned    += 1
+            registered += 1
+
+    conn.commit()
+
+    if registered:
+        print(
+            f"[build] Reconciliation complete: {registered} alias(es) registered, "
+            f"{cleaned} stale blob(s) removed."
+        )
+    else:
+        print("[build] Reconciliation complete: nothing to resolve.")
 
 
 # ---------------------------------------------------------------------------
@@ -1331,6 +1473,15 @@ def run(config: configparser.ConfigParser, base_dir: str = ".") -> bool:
     # ── Populate missing_files ─────────────────────────────────────────────
     all_found = scanner.found | found
     populate_missing_files(conn, canonical_map, all_found)
+
+    # ── Alias reconciliation ───────────────────────────────────────────────
+    # Registers canonicals whose bytes are already stored under a different
+    # canonical_name, and removes stale mismatch/unverifiable blobs that are
+    # superseded by a verified alias.  Must run after populate_missing_files
+    # so missing_files rows exist to be cleaned, and before the statistics
+    # block so counts reflect the fully reconciled state.
+    reconcile_aliases(conn, canonical_map)
+
     missing_count = conn.execute(
         "SELECT COUNT(DISTINCT canonical_name) FROM missing_files"
     ).fetchone()[0]
@@ -1388,7 +1539,7 @@ def run(config: configparser.ConfigParser, base_dir: str = ".") -> bool:
     print(f"    unverifiable      : {db_unverifiable:>6}")
     print(f"    hash mismatch     : {db_mismatch:>6}")
     if alias_count:
-        print(f"    via alias         : {alias_count:>6}  (bytes stored under a different canonical name)")
+        print(f"  Via alias: {alias_count:>6}  (bytes stored under a different canonical name)")
     print(f"  Missing  : {missing_count:>6}  (not yet found in any source, across all platforms)")
     print(f"\n  Blobs stored : {total_blobs} total  "
           f"({verified_blobs} verified"
@@ -1396,12 +1547,15 @@ def run(config: configparser.ConfigParser, base_dir: str = ".") -> bool:
 
     sl_total = missing_count + db_mismatch + db_unverifiable
     print(f"\n  Report counts: each platform's 'PHYSICAL FILES' line uses these same")
-    print(f"  definitions. Per-platform missing counts will be lower than {missing_count}")
-    print(f"  because each platform only declares a subset of all canonicals.")
+    print(f"  definitions. Per-platform counts cover only the files that platform declares,")
+    print(f"  so they will always be lower than the totals shown above.")
     print(f"\n  Shopping list: roughly {sl_total} rows expected "
           f"({missing_count} missing + {db_mismatch} mismatch + {db_unverifiable} unverifiable).")
-    print(f"  Actual row count varies: mismatch files expand when multiple MD5 variants")
-    print(f"  are declared; missing files may consolidate when canonicals share an expected MD5.")
+    print(f"  Actual row count varies:")
+    print(f"    mismatch    — expands when multiple MD5 variants are declared (one row per version).")
+    print(f"    missing     — may consolidate when multiple canonicals share an expected MD5.")
+    print(f"    unverifiable — may expand: alias canonicals whose primary blob is unverifiable")
+    print(f"                  each appear as their own row alongside the primary canonical.")
     print(f"  If the shopping list appears empty or stale, re-run Build then Report.")
 
     # ── Write build output files (research manifest stays untouched) ───────
