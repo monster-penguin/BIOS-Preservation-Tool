@@ -194,7 +194,8 @@ def _get_file_rows(conn: sqlite3.Connection, canonical: str, fdata: dict | None 
                 rows = [r]
 
     if not rows:
-        # canonical_aliases fallback
+        # canonical_aliases fallback — covers Cases 1–3 where the canonical has
+        # no direct files entry (bytes stored under a different canonical_name).
         alias = conn.execute(
             "SELECT sqlar_name FROM canonical_aliases WHERE canonical_name = ?",
             (canonical,),
@@ -206,6 +207,26 @@ def _get_file_rows(conn: sqlite3.Connection, canonical: str, fdata: dict | None 
             ).fetchone()
             if r:
                 rows = [r]
+
+    # Always append any additional canonical_aliases entries not already collected.
+    # This covers Case 4 multi-variant canonicals: a canonical may have a direct
+    # files entry (one platform's version) AND alias entries pointing to alternate
+    # verified blobs for other platforms.  Without this, the per-platform report
+    # only sees the direct files entry and misses the alternate variants.
+    seen_md5s = {r[1] for r in rows if r[1]}
+    alias_extras = conn.execute(
+        "SELECT sqlar_name FROM canonical_aliases WHERE canonical_name = ?",
+        (canonical,),
+    ).fetchall()
+    for (alias_sqlar,) in alias_extras:
+        r = conn.execute(
+            "SELECT sha1, md5, sha256, crc32, size, status FROM files WHERE sqlar_name = ?",
+            (alias_sqlar,),
+        ).fetchone()
+        if r and r[1] not in seen_md5s:
+            rows.append(r)
+            if r[1]:
+                seen_md5s.add(r[1])
 
     return [
         {
@@ -503,6 +524,15 @@ def run(config: configparser.ConfigParser, base_dir: str = ".") -> bool:
         manifest: dict = json.load(fh)
 
     conn = sqlite3.connect(sqlar_input)
+
+    # Ensure files.confidence column exists (added by verify_pass update).
+    # Older databases built before this change won't have it yet.
+    try:
+        conn.execute("SELECT confidence FROM files LIMIT 0")
+    except sqlite3.OperationalError:
+        conn.execute("ALTER TABLE files ADD COLUMN confidence TEXT")
+        conn.commit()
+
     os.makedirs(report_dir, exist_ok=True)
 
     # ── Generate one report per platform ───────────────────────────────────
@@ -561,14 +591,49 @@ def run(config: configparser.ConfigParser, base_dir: str = ".") -> bool:
             if v["status"] == "verified" and v["md5"]
         }
 
+        # Look up verify_pass confidence for this canonical.
+        # Two sources depending on how verify_pass handled it:
+        #   canonical_aliases.confidence — hash-matched true alias (blob was removed)
+        #   files.confidence             — platform-corroborated annotation (blob kept)
+        # NULL-confidence aliases (reconcile_aliases, MD5-based) are already
+        # effectively verified — we only surface 'high' / 'low' from verify_pass.
+        _alias_conf = conn.execute(
+            "SELECT confidence FROM canonical_aliases WHERE canonical_name = ?",
+            (canonical,),
+        ).fetchone()
+        if _alias_conf and _alias_conf[0]:
+            canonical_confidence: str = _alias_conf[0]
+        else:
+            _file_conf = conn.execute(
+                "SELECT confidence FROM files WHERE canonical_name = ? LIMIT 1",
+                (canonical,),
+            ).fetchone()
+            canonical_confidence = (
+                _file_conf[0] if _file_conf and _file_conf[0] else ""
+            )
+
         for p in enabled:
             pinfo = (fdata.get("platforms") or {}).get(p) or {}
             if not pinfo.get("known_file"):
                 continue
 
-            # Use best variant for overall platform status
-            actual = _get_file_row(conn, canonical, fdata)
-            sl_status, actual_md5 = _sl_status_for_platform(actual, pinfo)
+            # Check all stored variants — verified if ANY satisfies this platform
+            sl_status: str | None = "missing" if not all_variants else None
+            actual_md5: str = "not present" if not all_variants else ""
+            if all_variants:
+                for variant in all_variants:
+                    s, m = _sl_status_for_platform(variant, pinfo)
+                    if s is None:          # this variant satisfies the platform
+                        sl_status = None
+                        actual_md5 = ""
+                        break
+                    if not actual_md5:     # record first variant's actual_md5
+                        actual_md5 = m
+                    if sl_status is None:
+                        sl_status = s
+                    elif _STATUS_RANK_SL.get(s, 99) < _STATUS_RANK_SL.get(sl_status, 99):
+                        sl_status = s
+                        actual_md5 = m
 
             if sl_status is None:
                 any_verified = True
@@ -592,11 +657,12 @@ def run(config: configparser.ConfigParser, base_dir: str = ".") -> bool:
                     # whose MD5 is closest to this target, else use best variant
                     variant_for_md5 = next(
                         (v for v in all_variants if v["md5"].lower() == md5), None
-                    ) or actual
+                    )
                     act = variant_for_md5["md5"] if variant_for_md5 else actual_md5
 
                     if md5 not in per_md5:
                         per_md5[md5] = {"status": sl_status, "actual_md5": act,
+                                        "confidence": "",
                                         "platforms": set(), "filenames": set()}
                     else:
                         if (_STATUS_RANK_SL.get(sl_status, 99)
@@ -609,6 +675,7 @@ def run(config: configparser.ConfigParser, base_dir: str = ".") -> bool:
                 effective_status = "unverifiable" if sl_status == "hash_mismatch" else sl_status
                 if no_md5 is None:
                     no_md5 = {"status": effective_status, "actual_md5": actual_md5,
+                              "confidence": canonical_confidence or "unresolved",
                               "platforms": set(), "filenames": set()}
                 else:
                     if (_STATUS_RANK_SL.get(effective_status, 99)
@@ -626,6 +693,7 @@ def run(config: configparser.ConfigParser, base_dir: str = ".") -> bool:
                     "expected_md5": md5,
                     "actual_md5":   data["actual_md5"],
                     "status":       data["status"],
+                    "confidence":   "",
                     "platforms":    set(),
                     "filenames":    set(),
                 }
@@ -650,6 +718,7 @@ def run(config: configparser.ConfigParser, base_dir: str = ".") -> bool:
                     "expected_md5": "unknown",
                     "actual_md5":   no_md5["actual_md5"],
                     "status":       no_md5["status"],
+                    "confidence":   no_md5["confidence"],
                     "platforms":    set(),
                     "filenames":    set(),
                 }
@@ -658,6 +727,9 @@ def run(config: configparser.ConfigParser, base_dir: str = ".") -> bool:
                         < _STATUS_RANK_SL.get(shopping[canonical]["status"], 99)):
                     shopping[canonical]["status"]     = no_md5["status"]
                     shopping[canonical]["actual_md5"] = no_md5["actual_md5"]
+                # Carry confidence through if not already set on this entry
+                if not shopping[canonical].get("confidence"):
+                    shopping[canonical]["confidence"] = no_md5["confidence"]
             shopping[canonical]["platforms"].update(no_md5["platforms"])
             shopping[canonical]["filenames"].update(no_md5["filenames"])
 
@@ -668,30 +740,69 @@ def run(config: configparser.ConfigParser, base_dir: str = ".") -> bool:
         for entry in shopping.values():
             if entry["expected_md5"] != "unknown" and entry["status"] == "unverifiable":
                 entry["status"] = "hash_mismatch"
+
+        # Confidence annotation for hash_mismatch entries.
+        # Mirrors the unverifiable confidence model — instead of querying the DB,
+        # confidence is derived from how many platforms independently declared the
+        # same expected MD5 that we do not yet have:
+        #   high       — 2+ platforms agree on the target MD5 (stronger signal)
+        #   low        — only 1 platform declares it (weaker signal)
+        # Entries that already carry a confidence value (e.g. promoted from
+        # unverifiable via the sanity pass above) are left unchanged.
+        for entry in shopping.values():
+            if entry["status"] == "hash_mismatch" and not entry.get("confidence"):
+                n = len(entry.get("platforms") or [])
+                entry["confidence"] = "high" if n >= 2 else "low"
         sl_path = os.path.join(report_dir, "global_shopping_list.csv")
         with open(sl_path, "w", newline="", encoding="utf-8") as fh:
             writer = csv.writer(fh)
             writer.writerow([
-                "Known Aliases", "Expected MD5", "Status", "Platforms", "Actual MD5"
+                "Known Aliases", "Expected MD5", "Status",
+                "Confidence", "Platforms", "Actual MD5",
             ])
             for canonical, data in sorted(shopping.items()):
                 writer.writerow([
                     ", ".join(sorted(data["filenames"])),
                     data["expected_md5"],
                     data["status"],
+                    data.get("confidence", ""),
                     ", ".join(sorted(data["platforms"])),
                     data["actual_md5"],
                 ])
         missing_count  = sum(1 for d in shopping.values() if d["status"] == "missing")
         mismatch_count = sum(1 for d in shopping.values() if d["status"] == "hash_mismatch")
         unverif_count  = sum(1 for d in shopping.values() if d["status"] == "unverifiable")
+
+        mismatch_high  = sum(1 for d in shopping.values()
+                             if d["status"] == "hash_mismatch" and d.get("confidence") == "high")
+        mismatch_low   = sum(1 for d in shopping.values()
+                             if d["status"] == "hash_mismatch" and d.get("confidence") == "low")
+        mismatch_none  = mismatch_count - mismatch_high - mismatch_low
+
+        unverif_high   = sum(1 for d in shopping.values()
+                             if d["status"] == "unverifiable" and d.get("confidence") == "high")
+        unverif_low    = sum(1 for d in shopping.values()
+                             if d["status"] == "unverifiable" and d.get("confidence") == "low")
+        unverif_none   = unverif_count - unverif_high - unverif_low
+
+        mismatch_detail = (
+            f"{mismatch_count} hash_mismatch"
+            f"  [high: {mismatch_high}  low: {mismatch_low}  unresolved: {mismatch_none}]"
+        )
+        unverif_detail = (
+            f"{unverif_count} unverifiable"
+            f"  [high: {unverif_high}  low: {unverif_low}  unresolved: {unverif_none}]"
+        )
         print(
             f"\n  Global shopping list → {sl_path}  "
-            f"({missing_count} missing, {mismatch_count} hash_mismatch, {unverif_count} unverifiable)"
+            f"({missing_count} missing, {mismatch_detail}, {unverif_detail})"
         )
 
         # Write per-status subset CSVs
-        HEADERS = ["Known Aliases", "Expected MD5", "Status", "Platforms", "Actual MD5"]
+        HEADERS = [
+            "Known Aliases", "Expected MD5", "Status",
+            "Confidence", "Platforms", "Actual MD5",
+        ]
         subsets = [
             ("missing",       "shopping_missing.csv",       missing_count),
             ("hash_mismatch", "shopping_hash_mismatch.csv", mismatch_count),
@@ -709,6 +820,7 @@ def run(config: configparser.ConfigParser, base_dir: str = ".") -> bool:
                         ", ".join(sorted(data["filenames"])),
                         data["expected_md5"],
                         data["status"],
+                        data.get("confidence", ""),
                         ", ".join(sorted(data["platforms"])),
                         data["actual_md5"],
                     ])
