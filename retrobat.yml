@@ -1,0 +1,1431 @@
+platform: RetroBat
+version: 7.5.3
+homepage: https://www.retrobat.org
+source: https://raw.githubusercontent.com/RetroBat-Official/emulatorlauncher/master/batocera-systems/Resources/batocera-systems.json
+base_destination: bios
+hash_type: md5
+verification_mode: md5
+systems:
+  3do:
+    files:
+    - name: panafz1.bin
+      destination: panafz1.bin
+      required: true
+      md5: f47264dd47fe30f73ab3c010015c155b
+    - name: panafz10.bin
+      destination: panafz10.bin
+      required: true
+      md5: 51f2f43ae2f3508a14d9f56597e2d3ce
+    - name: goldstar.bin
+      destination: goldstar.bin
+      required: true
+      md5: 8639fd5e549bd6238cfee79e3e749114
+  adam:
+    files:
+    - name: adam.zip
+      destination: adam.zip
+      required: true
+    - name: adam_ddp.zip
+      destination: adam_ddp.zip
+      required: true
+    - name: adam_fdc.zip
+      destination: adam_fdc.zip
+      required: true
+    - name: adam_kb.zip
+      destination: adam_kb.zip
+      required: true
+    - name: adam_prn.zip
+      destination: adam_prn.zip
+      required: true
+    - name: adam_cart.xml
+      destination: mame/hash/adam_cart.xml
+      required: true
+    - name: adam_cass.xml
+      destination: mame/hash/adam_cass.xml
+      required: true
+    - name: adam_flop.xml
+      destination: mame/hash/adam_flop.xml
+      required: true
+  advision:
+    files:
+    - name: advision.zip
+      destination: advision.zip
+      required: true
+      md5: 1c08606408029751fd30ac91d2bf30d5
+    - name: advision.xml
+      destination: mame/hash/advision.xml
+      required: true
+  amiga500:
+    files:
+    - name: kick33180.A500
+      destination: kick33180.A500
+      required: true
+      md5: 85ad74194e87c08904327de1a9443b7a
+    - name: kick34005.A500
+      destination: kick34005.A500
+      required: true
+      md5: 82a21c1890cae844b3df741f2762d48d
+    - name: kick37175.A500
+      destination: kick37175.A500
+      required: true
+      md5: dc10d7bdd1b6f450773dfb558477c230
+  amiga1200:
+    files:
+    - name: kick40068.A1200
+      destination: kick40068.A1200
+      required: true
+      md5: 646773759326fbac3b2311fd8c8793ee
+  amiga4000:
+    files:
+    - name: kick40068.A4000
+      destination: kick40068.A4000
+      required: true
+      md5: 9bdedde6a4f33555b4a270c8ca53297d
+  amigacdtv:
+    files:
+    - name: kick40060.CD32.ext
+      destination: kick40060.CD32.ext
+      required: true
+      md5: bb72565701b1b6faece07d68ea5da639
+    - name: kick34005.CDTV
+      destination: kick34005.CDTV
+      required: true
+      md5: 89da1838a24460e4b93f4f0c5d92d48d
+  amigacd32:
+    files:
+    - name: kick40060.CD32.ext
+      destination: kick40060.CD32.ext
+      required: true
+      md5: bb72565701b1b6faece07d68ea5da639
+    - name: kick40060.CD32
+      destination: kick40060.CD32
+      required: true
+      md5: 5f8924d013dd57a89cf349f4cdedc6b1
+  apfm1000:
+    files:
+    - name: apfm1000.zip
+      destination: apfm1000.zip
+      required: true
+      md5: b197db12f7a13827717bbeb7cfd9542a
+    - name: apfm1000.xml
+      destination: mame/hash/apfm1000.xml
+      required: true
+  apple2:
+    files:
+    - name: apple2.zip
+      destination: apple2.zip
+      required: true
+    - name: apple2e.zip
+      destination: apple2e.zip
+      required: true
+    - name: apple2ee.zip
+      destination: apple2ee.zip
+      required: true
+    - name: apple2p.zip
+      destination: apple2p.zip
+      required: true
+    - name: a2diskiing.zip
+      destination: a2diskiing.zip
+      required: true
+    - name: votrsc01a.zip
+      destination: votrsc01a.zip
+      required: true
+    - name: votrsc01.zip
+      destination: votrsc01.zip
+      required: true
+    - name: d2fdc.zip
+      destination: d2fdc.zip
+      required: true
+    - name: AppleIIe_DiskII.rom
+      destination: AppleIIe_DiskII.rom
+      required: true
+    - name: AppleIIe.rom
+      destination: AppleIIe.rom
+      required: true
+    - name: apple2-int-auto.rom
+      destination: apple2-int-auto.rom
+      required: true
+    - name: apple2-asoft-auto.rom
+      destination: apple2-asoft-auto.rom
+      required: true
+    - name: disk2-13boot.rom
+      destination: disk2-13boot.rom
+      required: true
+    - name: disk2-13seq.rom
+      destination: disk2-13seq.rom
+      required: true
+    - name: disk2-16boot.rom
+      destination: disk2-16boot.rom
+      required: true
+    - name: disk2-16seq.rom
+      destination: disk2-16seq.rom
+      required: true
+    - name: apple2_cass.xml
+      destination: mame/hash/apple2_cass.xml
+      required: true
+    - name: apple2_flop_clcracked.xml
+      destination: mame/hash/apple2_flop_clcracked.xml
+      required: true
+    - name: apple2_flop_misc.xml
+      destination: mame/hash/apple2_flop_misc.xml
+      required: true
+    - name: apple2_flop_orig.xml
+      destination: mame/hash/apple2_flop_orig.xml
+      required: true
+  apple2gs:
+    files:
+    - name: APPLE2GS.ROM
+      destination: APPLE2GS.ROM
+      required: true
+      md5: 20a0334c447cb069a040ae5be1d938df
+    - name: apple2gs.zip
+      destination: apple2gs.zip
+      required: true
+    - name: apple2gs_flop_clcracked.xml
+      destination: mame/hash/apple2gs_flop_clcracked.xml
+      required: true
+    - name: apple2gs_flop_misc.xml
+      destination: mame/hash/apple2gs_flop_misc.xml
+      required: true
+    - name: apple2gs_flop_orig.xml
+      destination: mame/hash/apple2gs_flop_orig.xml
+      required: true
+  aquarius:
+    files:
+    - name: aquarius.zip
+      destination: aquarius.zip
+      required: true
+    - name: aquariusp.zip
+      destination: aquariusp.zip
+      required: true
+    - name: aquarius2.zip
+      destination: aquarius2.zip
+      required: true
+    - name: aquarius_ar.zip
+      destination: aquarius_ar.zip
+      required: true
+    - name: aquarius_cart.xml
+      destination: mame/hash/aquarius_cart.xml
+      required: true
+    - name: aquarius_cass.xml
+      destination: mame/hash/aquarius_cass.xml
+      required: true
+  arcadia:
+    files:
+    - name: ar_bios.zip
+      destination: ar_bios.zip
+      required: true
+      md5: 37e9746f4491aa2df9a83729d1a93620
+    - name: arcadia.xml
+      destination: mame/hash/arcadia.xml
+      required: true
+  archimedes:
+    files:
+    - name: aa310.zip
+      destination: aa310.zip
+      required: true
+    - name: archimedes_keyboard.zip
+      destination: archimedes_keyboard.zip
+      required: true
+    - name: archimedes.xml
+      destination: mame/hash/archimedes.xml
+      required: true
+  astrocde:
+    files:
+    - name: astrocde.zip
+      destination: astrocde.zip
+      required: true
+      md5: f58a3823ab308ef0a02b498d126e5d96
+    - name: astrocde.xml
+      destination: mame/hash/astrocde.xml
+      required: true
+  atari800:
+    files:
+    - name: ATARIXL.ROM
+      destination: ATARIXL.ROM
+      required: true
+      md5: 06daac977823773a3eea3422fd26a703
+    - name: ATARIBAS.ROM
+      destination: ATARIBAS.ROM
+      required: true
+      md5: 0bac0c6a50104045d902df4503a4c30b
+    - name: ATARIOSA.ROM
+      destination: ATARIOSA.ROM
+      required: true
+      md5: eb1f32f5d9f382db1bbfb8d7f9cb343a
+    - name: ATARIOSB.ROM
+      destination: ATARIOSB.ROM
+      required: true
+      md5: a3e8d617c95d08031fe1b20d541434b2
+  atari5200:
+    files:
+    - name: 5200.rom
+      destination: 5200.rom
+      required: true
+      md5: 281f20ea4320404ec820fb7ec0693b38
+  atari7800:
+    files:
+    - name: 7800 BIOS (E).rom
+      destination: 7800 BIOS (E).rom
+      required: true
+      md5: 397bb566584be7b9764e7a68974c4263
+    - name: 7800 BIOS (U).rom
+      destination: 7800 BIOS (U).rom
+      required: true
+      md5: 0763f1ffb006ddbe32e52d497ee848ae
+    - name: ProSystem.dat
+      destination: ProSystem.dat
+      required: true
+      md5: ce6a86574d0c9de9075705f14e99d090
+    - name: A78_highscore.bin
+      destination: A78_highscore.bin
+      required: true
+  atarist:
+    files:
+    - name: tos.img
+      destination: tos.img
+      required: true
+    - name: emutos.img
+      destination: hatari/tos/emutos.img
+      required: true
+    - name: tos102.img
+      destination: hatari/tos/tos102.img
+      required: true
+    - name: tos106.img
+      destination: hatari/tos/tos106.img
+      required: true
+    - name: tos104.img
+      destination: hatari/tos/tos104.img
+      required: true
+    - name: tos206.img
+      destination: hatari/tos/tos206.img
+      required: true
+    - name: emutos.img
+      destination: hatarib/emutos.img
+      required: true
+    - name: tos102.img
+      destination: hatarib/tos102.img
+      required: true
+    - name: tos106.img
+      destination: hatarib/tos106.img
+      required: true
+    - name: tos104.img
+      destination: hatarib/tos104.img
+      required: true
+    - name: tos206.img
+      destination: hatarib/tos206.img
+      required: true
+  atom:
+    files:
+    - name: atom.zip
+      destination: atom.zip
+      required: true
+    - name: atom_cass.xml
+      destination: mame/hash/atom_cass.xml
+      required: true
+    - name: atom_flop.xml
+      destination: mame/hash/atom_flop.xml
+      required: true
+    - name: atom_rom.xml
+      destination: mame/hash/atom_rom.xml
+      required: true
+  atomiswave:
+    files:
+    - name: awbios.zip
+      destination: dc/awbios.zip
+      required: true
+      md5: 0ec5ae5b5a5c4959fa8b43fcf8687f7c
+  bbcmicro:
+    files:
+    - name: bbcb.zip
+      destination: bbcb.zip
+      required: true
+    - name: bbc_acorn8271.zip
+      destination: bbc_acorn8271.zip
+      required: true
+    - name: saa5050.zip
+      destination: saa5050.zip
+      required: true
+    - name: bbc_tube_80186.zip
+      destination: bbc_tube_80186.zip
+      required: true
+    - name: bbcm.zip
+      destination: bbcm.zip
+      required: true
+    - name: bbcmc.zip
+      destination: bbcmc.zip
+      required: true
+    - name: bbc_bitstik1.zip
+      destination: bbc_bitstik1.zip
+      required: true
+    - name: bbc_bitstik2.zip
+      destination: bbc_bitstik2.zip
+      required: true
+    - name: bbc.zip
+      destination: mame/samples/bbc.zip
+      required: true
+    - name: bbc_cass.xml
+      destination: mame/hash/bbc_cass.xml
+      required: true
+    - name: bbc_rom.xml
+      destination: mame/hash/bbc_rom.xml
+      required: true
+    - name: bbcb_flop.xml
+      destination: mame/hash/bbcb_flop.xml
+      required: true
+    - name: bbcb_flop_orig.xml
+      destination: mame/hash/bbcb_flop_orig.xml
+      required: true
+    - name: bbcb_flop_us.xml
+      destination: mame/hash/bbcb_flop_us.xml
+      required: true
+    - name: bbcm_cart.xml
+      destination: mame/hash/bbcm_cart.xml
+      required: true
+    - name: bbcm_flop.xml
+      destination: mame/hash/bbcm_flop.xml
+      required: true
+    - name: bbcmc_flop.xml
+      destination: mame/hash/bbcmc_flop.xml
+      required: true
+  bk:
+    files:
+    - name: B11M_BOS.ROM
+      destination: bk/B11M_BOS.ROM
+      required: true
+      md5: fe4627d1e3a1535874085050733263e7
+    - name: B11M_EXT.ROM
+      destination: bk/B11M_EXT.ROM
+      required: true
+      md5: dc52f365d56fa1951f5d35b1101b9e3f
+    - name: BAS11M_0.ROM
+      destination: bk/BAS11M_0.ROM
+      required: true
+      md5: 946f6f23ded03c0e26187f0b3ca75993
+    - name: BAS11M_1.ROM
+      destination: bk/BAS11M_1.ROM
+      required: true
+      md5: 1e6637f32aa7d1de03510030cac40bcf
+    - name: DISK_327.ROM
+      destination: bk/DISK_327.ROM
+      required: true
+      md5: 5015228eeeb238e65da8edcd1b6dfac7
+    - name: BASIC10.ROM
+      destination: bk/BASIC10.ROM
+      required: true
+      md5: 3fa774326d75410a065659aea80252f0
+    - name: FOCAL10.ROM
+      destination: bk/FOCAL10.ROM
+      required: true
+      md5: 5737f972e8638831ab71e9139abae052
+    - name: MONIT10.ROM
+      destination: bk/MONIT10.ROM
+      required: true
+      md5: 95f8c41c6abf7640e35a6a03cecebd01
+  loopy:
+    files:
+    - name: casloopy.zip
+      destination: casloopy.zip
+      required: true
+      md5: 0e1d8dc0110ecf8201c0cef11ef4a858
+    - name: casloopy.xml
+      destination: mame/hash/casloopy.xml
+      required: true
+  cdi:
+    files:
+    - name: cdibios.zip
+      destination: cdibios.zip
+      required: true
+    - name: cdimono1.zip
+      destination: cdimono1.zip
+      required: true
+    - name: cdimono2.zip
+      destination: cdimono2.zip
+      required: true
+    - name: cdi.xml
+      destination: mame/hash/cdi.xml
+      required: true
+    - name: cdibios.zip
+      destination: same_cdi/bios/cdibios.zip
+      required: true
+    - name: cdimono1.zip
+      destination: same_cdi/bios/cdimono1.zip
+      required: true
+    - name: cdimono2.zip
+      destination: same_cdi/bios/cdimono2.zip
+      required: true
+  channelf:
+    files:
+    - name: sl31253.bin
+      destination: sl31253.bin
+      required: true
+      md5: ac9804d4c0e9d07e33472e3726ed15c3
+    - name: sl31254.bin
+      destination: sl31254.bin
+      required: true
+      md5: da98f4bb3242ab80d76629021bb27585
+    - name: sl90025.bin
+      destination: sl90025.bin
+      required: true
+      md5: 95d339631d867c8f1d15a5f2ec26069d
+  coco:
+    files:
+    - name: coco.zip
+      destination: coco.zip
+      required: true
+    - name: coco2.zip
+      destination: coco2.zip
+      required: true
+    - name: coco2b.zip
+      destination: coco2b.zip
+      required: true
+    - name: coco3.zip
+      destination: coco3.zip
+      required: true
+    - name: coco3p.zip
+      destination: coco3p.zip
+      required: true
+    - name: coco_cart.xml
+      destination: mame/hash/coco_cart.xml
+      required: true
+    - name: coco_flop.xml
+      destination: mame/hash/coco_flop.xml
+      required: true
+  colecovision:
+    files:
+    - name: colecovision.rom
+      destination: colecovision.rom
+      required: true
+      md5: 2c66f5911e5b42b8ebe113403548eee7
+    - name: coleco.rom
+      destination: openMSX/share/systemroms/coleco.rom
+      required: true
+      md5: 2c66f5911e5b42b8ebe113403548eee7
+  crvision:
+    files:
+    - name: crvision.zip
+      destination: crvision.zip
+      required: true
+    - name: crvision.xml
+      destination: mame/hash/crvision.xml
+      required: true
+  dragon32:
+    files:
+    - name: d32.rom
+      destination: dragon/d32.rom
+      required: true
+      md5: 3420b96031078a4ef408cad7bf21a33f
+    - name: d64_1.rom
+      destination: dragon/d64_1.rom
+      required: true
+      md5: 5f0bee59710e55f5880e74890912ed78
+    - name: d64_2.rom
+      destination: dragon/d64_2.rom
+      required: true
+      md5: fd91edce7be5e7c2d88e46b76956a8aa
+  dreamcast:
+    files:
+    - name: dc_boot.bin
+      destination: dc/dc_boot.bin
+      required: true
+      md5: e10c53c2f8b90bab96ead2d368858623
+    - name: dc_flash.bin
+      destination: dc/dc_flash.bin
+      required: true
+      md5: 0a93f7940c455905bea6e392dfde92a4
+    - name: dc.zip
+      destination: dc/dc.zip
+      required: true
+  electron:
+    files:
+    - name: electron.zip
+      destination: electron.zip
+      required: true
+    - name: electron_plus1.zip
+      destination: electron_plus1.zip
+      required: true
+    - name: electron_plus3.zip
+      destination: electron_plus3.zip
+      required: true
+    - name: electron64.zip
+      destination: electron64.zip
+      required: true
+    - name: electron_cass.xml
+      destination: mame/hash/electron_cass.xml
+      required: true
+    - name: electron_cart.xml
+      destination: mame/hash/electron_cart.xml
+      required: true
+    - name: electron_flop.xml
+      destination: mame/hash/electron_flop.xml
+      required: true
+  fds:
+    files:
+    - name: disksys.rom
+      destination: disksys.rom
+      required: true
+      md5: ca30b50f880eb660a320674ed365ef7a
+  ecwolf:
+    files:
+    - name: ecwolf.pk3
+      destination: ecwolf.pk3
+      required: true
+      md5: dbaa5c4e20a11000d1c4db3a2a28f374
+  fm7:
+    files:
+    - name: fm7.zip
+      destination: fm7.zip
+      required: true
+    - name: fm77av.zip
+      destination: fm77av.zip
+      required: true
+    - name: fm7_cass.xml
+      destination: mame/hash/fm7_cass.xml
+      required: true
+    - name: fm7_disk.xml
+      destination: mame/hash/fm7_disk.xml
+      required: true
+    - name: fm77av.xml
+      destination: mame/hash/fm77av.xml
+      required: true
+  fmtowns:
+    files:
+    - name: fmtowns.zip
+      destination: fmtowns.zip
+      required: true
+    - name: fmtownsux.zip
+      destination: fmtownsux.zip
+      required: true
+    - name: FMT_DIC.ROM
+      destination: fmtowns/FMT_DIC.ROM
+      required: true
+      md5: 8fa4e553f28cfc0c30a0a1e589799942
+    - name: FMT_DOS.ROM
+      destination: fmtowns/FMT_DOS.ROM
+      required: true
+      md5: 0585b19930d4a7f4c71bcc8a33746588
+    - name: FMT_F20.ROM
+      destination: fmtowns/FMT_F20.ROM
+      required: true
+      md5: ac0c7021e9bf48ca84b51ab651169a88
+    - name: FMT_FNT.ROM
+      destination: fmtowns/FMT_FNT.ROM
+      required: true
+      md5: b91300e55b70227ce98b59c5f02fa8dd
+    - name: FMT_SYS.ROM
+      destination: fmtowns/FMT_SYS.ROM
+      required: true
+      md5: 86fb6f7280689259f0ca839dd3dd6cde
+    - name: fmtowns_cd.xml
+      destination: mame/hash/fmtowns_cd.xml
+      required: true
+    - name: fmtowns_flop_cracked.xml
+      destination: mame/hash/fmtowns_flop_cracked.xml
+      required: true
+    - name: fmtowns_flop_misc.xml
+      destination: mame/hash/fmtowns_flop_misc.xml
+      required: true
+    - name: fmtowns_flop_orig.xml
+      destination: mame/hash/fmtowns_flop_orig.xml
+      required: true
+  gamate:
+    files:
+    - name: gamate.zip
+      destination: gamate.zip
+      required: true
+      md5: 320bf3d4142fa1043255db7ff87d17c7
+    - name: gamate.xml
+      destination: mame/hash/gamate.xml
+      required: true
+  gamecom:
+    files:
+    - name: gamecom.zip
+      destination: gamecom.zip
+      required: true
+      md5: f2087ed09f7fa8d8856cfafb20dd00dc
+    - name: gamecom.xml
+      destination: mame/hash/gamecom.xml
+      required: true
+  gamepock:
+    files:
+    - name: gamepock.zip
+      destination: gamepock.zip
+      required: true
+      md5: 887479fe3c69a0b935c57a7a738e26c4
+    - name: gamepock.xml
+      destination: mame/hash/gamepock.xml
+      required: true
+  gb:
+    files:
+    - name: gb_bios.bin
+      destination: gb_bios.bin
+      required: true
+      md5: 32fbbd84168d3482956eb3c5051637f5
+  gba:
+    files:
+    - name: gba_bios.bin
+      destination: gba_bios.bin
+      required: true
+      md5: a860e8c0b6d573d191e4ec7db1b1e4f6
+  gbc:
+    files:
+    - name: gbc_bios.bin
+      destination: gbc_bios.bin
+      required: true
+      md5: dbfce9db9deaa2567f6a84fde55f9680
+  gmaster:
+    files:
+    - name: gmaster.zip
+      destination: gmaster.zip
+      required: true
+      md5: 4239d6f44a0d78d27c69f9b95885f48e
+    - name: gmaster.xml
+      destination: mame/hash/gmaster.xml
+      required: true
+  gp32:
+    files:
+    - name: gp32.zip
+      destination: gp32.zip
+      required: true
+      md5: 8c392f475834218d88533150d36cc84c
+    - name: gp32.xml
+      destination: mame/hash/gp32.xml
+      required: true
+  hikaru:
+    files:
+    - name: hikaru.zip
+      destination: hikaru.zip
+      required: true
+      md5: aac601811a25d7b31a3d5f3f1f82f338
+    - name: mie.zip
+      destination: mie.zip
+      required: true
+      md5: e95415b161121bef35ade12367138c63
+  intellivision:
+    files:
+    - name: exec.bin
+      destination: exec.bin
+      required: true
+      md5: 62e761035cb657903761800f4437b8af
+    - name: grom.bin
+      destination: grom.bin
+      required: true
+      md5: 0cd5946c6473e42e8e4c2137785e427f
+  j2me:
+    files:
+    - name: freej2me-lr.jar
+      destination: freej2me-lr.jar
+      required: true
+      md5: a6f31483d1da4558cc19025e21f95c1d
+  jaguar:
+    files:
+    - name: '[BIOS] Atari Jaguar (World).j64'
+      destination: '[BIOS] Atari Jaguar (World).j64'
+      required: true
+      md5: bcfe348c565d9dedb173822ee6850dea
+  laseractive:
+    files:
+    - name: '[BIOS] LaserActive PAC-N1 (Japan) (v1.02).bin'
+      destination: laseractive/[BIOS] LaserActive PAC-N1 (Japan) (v1.02).bin
+      required: true
+      md5: f69f173b251d8bf7649b10a9167a10bf
+    - name: '[BIOS] LaserActive PAC-N10 (US) (v1.02).bin'
+      destination: laseractive/[BIOS] LaserActive PAC-N10 (US) (v1.02).bin
+      required: true
+      md5: f0fb8a4605ac7eefbafd4f2d5a793cc8
+    - name: '[BIOS] LaserActive PCE-LP1 (Japan) (v1.02).bin'
+      destination: laseractive/[BIOS] LaserActive PCE-LP1 (Japan) (v1.02).bin
+      required: true
+      md5: 761fea207d0eafd4cfd78da7c44cac88
+    - name: '[BIOS] LaserActive PAC-S10 (US) (v1.04).bin'
+      destination: laseractive/[BIOS] LaserActive PAC-S10 (US) (v1.04).bin
+      required: true
+    - name: '[BIOS] LaserActive PAC-S1 (Japan) (v1.05).bin'
+      destination: laseractive/[BIOS] LaserActive PAC-S1 (Japan) (v1.05).bin
+      required: true
+  lynx:
+    files:
+    - name: lynxboot.img
+      destination: lynxboot.img
+      required: true
+      md5: fcd403db69f54290b51035d82f835e7b
+  camplynx:
+    files:
+    - name: lynx48k.zip
+      destination: lynx48k.zip
+      required: true
+    - name: lynx96k.zip
+      destination: lynx96k.zip
+      required: true
+    - name: lynx128k.zip
+      destination: lynx128k.zip
+      required: true
+    - name: lynx48-1.rom
+      destination: emulators/jynx/lynx48-1.rom
+      required: true
+    - name: lynx48-2.rom
+      destination: emulators/jynx/lynx48-2.rom
+      required: true
+    - name: lynx96-1.rom
+      destination: emulators/jynx/lynx96-1.rom
+      required: true
+    - name: lynx96-2.rom
+      destination: emulators/jynx/lynx96-2.rom
+      required: true
+    - name: lynx96-3.rom
+      destination: emulators/jynx/lynx96-3.rom
+      required: true
+    - name: lynx96-3-scorpion.rom
+      destination: emulators/jynx/lynx96-3-scorpion.rom
+      required: true
+    - name: camplynx_cass.xml
+      destination: mame/hash/camplynx_cass.xml
+      required: true
+    - name: camplynx_flop.xml
+      destination: mame/hash/camplynx_flop.xml
+      required: true
+  mastersystem:
+    files:
+    - name: '[BIOS] Sega Master System (USA, Europe) (v1.3).sms'
+      destination: '[BIOS] Sega Master System (USA, Europe) (v1.3).sms'
+      required: true
+    - name: '[BIOS] Sega Master System (Japan) (v2.1).sms'
+      destination: '[BIOS] Sega Master System (Japan) (v2.1).sms'
+      required: true
+  msx:
+    files:
+    - name: MSX.ROM
+      destination: MSX.ROM
+      required: true
+      md5: 364a1a579fe5cb8dba54519bcfcdac0d
+    - name: DISK.ROM
+      destination: DISK.ROM
+      required: true
+      md5: 80dcd1ad1a4cf65d64b7ba10504e8190
+    - name: FMPAC.ROM
+      destination: FMPAC.ROM
+      required: true
+      md5: 6f69cc8b5ed761b03afd78000dfb0e19
+    - name: MSXDOS2.ROM
+      destination: MSXDOS2.ROM
+      required: true
+      md5: 6418d091cd6907bbcf940324339e43bb
+    - name: PAINTER.ROM
+      destination: PAINTER.ROM
+      required: true
+      md5: 403cdea1cbd2bb24fae506941f8f655e
+    - name: KANJI.ROM
+      destination: KANJI.ROM
+      required: true
+      md5: febe8782b466d7c3b16de6d104826b34
+    - name: cf-3300_basic-bios1.rom
+      destination: openMSX/share/systemroms/cf-3300_basic-bios1.rom
+      required: true
+      md5: f873f1260b14f1468fa118778ae1c3d2
+    - name: cf-3300_disk.rom
+      destination: openMSX/share/systemroms/cf-3300_disk.rom
+      required: true
+      md5: 318b6aa76da71c54ccad7734356e1902
+    - name: vg8020_basic-bios1.rom
+      destination: openMSX/share/systemroms/vg8020_basic-bios1.rom
+      required: true
+      md5: a0452dbf5ace7d2e49d0a8029efed09a
+    - name: px-7_basic-bios1.rom
+      destination: openMSX/share/systemroms/px-7_basic-bios1.rom
+      required: true
+      md5: 9218f6dd89f7ba01e3090d44721b4260
+    - name: px-7_pbasic.rom
+      destination: openMSX/share/systemroms/px-7_pbasic.rom
+      required: true
+      md5: 281809cafe63437fc4bffb3033fbd0db
+    - name: fmpac.rom
+      destination: openMSX/share/systemroms/fmpac.rom
+      required: true
+      md5: 6f69cc8b5ed761b03afd78000dfb0e19
+    - name: yrw801.rom
+      destination: openMSX/share/systemroms/yrw801.rom
+      required: true
+      md5: 42af93619160ef2116416f74a6cb12f2
+  msx2:
+    files:
+    - name: MSX2.ROM
+      destination: MSX2.ROM
+      required: true
+      md5: ec3a01c91f24fbddcbcab0ad301bc9ef
+    - name: MSX2EXT.ROM
+      destination: MSX2EXT.ROM
+      required: true
+      md5: 2183c2aff17cf4297bdb496de78c2e8a
+    - name: fs-5500_basic-bios2.rom
+      destination: openMSX/share/systemroms/fs-5500_basic-bios2.rom
+      required: true
+      md5: 5bf4fdfd3c3ffea3e573b386550cb3fa
+    - name: fs-5500_disk.rom
+      destination: openMSX/share/systemroms/fs-5500_disk.rom
+      required: true
+      md5: 86269da485e852d9f581ac27f4ba32ff
+    - name: fs-5500_kanjibasic.rom
+      destination: openMSX/share/systemroms/fs-5500_kanjibasic.rom
+      required: true
+      md5: afbe6ba903453902540ae988cc89dc7b
+    - name: fs-5500_kanjifont.rom
+      destination: openMSX/share/systemroms/fs-5500_kanjifont.rom
+      required: true
+      md5: 090539674630c1338a90a1df943a93e2
+    - name: fs-5500_msx2sub.rom
+      destination: openMSX/share/systemroms/fs-5500_msx2sub.rom
+      required: true
+      md5: dcd5e2388115172f2fb48875b2089dbf
+    - name: fs-5500_superimp.rom
+      destination: openMSX/share/systemroms/fs-5500_superimp.rom
+      required: true
+      md5: 7eb6ae0fbe9736b20dda8dcbd5064f67
+    - name: nms8245_basic-bios2.rom
+      destination: openMSX/share/systemroms/nms8245_basic-bios2.rom
+      required: true
+      md5: ec3a01c91f24fbddcbcab0ad301bc9ef
+    - name: nms8245_disk.rom
+      destination: openMSX/share/systemroms/nms8245_disk.rom
+      required: true
+      md5: 3525ea046ddedc66991790eeae32acfd
+    - name: nms8245_disk_1.06.rom
+      destination: openMSX/share/systemroms/nms8245_disk_1.06.rom
+      required: true
+      md5: 57509815f93e2817d3eb57e20286c7fb
+    - name: nms8245_msx2sub.rom
+      destination: openMSX/share/systemroms/nms8245_msx2sub.rom
+      required: true
+      md5: 248514aba82a0ec7fe2a9106862b05cd
+    - name: fmpac.rom
+      destination: openMSX/share/systemroms/fmpac.rom
+      required: true
+      md5: 6f69cc8b5ed761b03afd78000dfb0e19
+    - name: yrw801.rom
+      destination: openMSX/share/systemroms/yrw801.rom
+      required: true
+      md5: 42af93619160ef2116416f74a6cb12f2
+  msx2+:
+    files:
+    - name: MSX2P.ROM
+      destination: MSX2P.ROM
+      required: true
+      md5: 847cc025ffae665487940ff2639540e5
+    - name: MSX2PEXT.ROM
+      destination: MSX2PEXT.ROM
+      required: true
+      md5: 7c8243c71d8f143b2531f01afa6a05dc
+    - name: fs-a1wsx_basic-bios2p.rom
+      destination: openMSX/share/systemroms/fs-a1wsx_basic-bios2p.rom
+      required: true
+      md5: c5c26c3e8bc6c485424818057f0507b9
+    - name: fs-a1wsx_disk.rom
+      destination: openMSX/share/systemroms/fs-a1wsx_disk.rom
+      required: true
+      md5: 00aa02b6077de40a0b51d71a3c3e1d5f
+    - name: fs-a1wsx_firmware.rom
+      destination: openMSX/share/systemroms/fs-a1wsx_firmware.rom
+      required: true
+      md5: fa8e7d4b999af058fe2864a5f2e014ec
+    - name: fs-a1wsx_fmbasic.rom
+      destination: openMSX/share/systemroms/fs-a1wsx_fmbasic.rom
+      required: true
+      md5: 0c40e7db1c1fcc2405e4d0cdd215adb4
+    - name: fs-a1wsx_kanjibasic.rom
+      destination: openMSX/share/systemroms/fs-a1wsx_kanjibasic.rom
+      required: true
+      md5: 9dfdebfaa6b547222a40aab8bb2e29f8
+    - name: fs-a1wsx_kanjifont.rom
+      destination: openMSX/share/systemroms/fs-a1wsx_kanjifont.rom
+      required: true
+      md5: acf53887c2d2783dc059a9b442c86b90
+    - name: fs-a1wsx_msx2psub.rom
+      destination: openMSX/share/systemroms/fs-a1wsx_msx2psub.rom
+      required: true
+      md5: 7c8243c71d8f143b2531f01afa6a05dc
+    - name: fmpac.rom
+      destination: openMSX/share/systemroms/fmpac.rom
+      required: true
+      md5: 6f69cc8b5ed761b03afd78000dfb0e19
+    - name: yrw801.rom
+      destination: openMSX/share/systemroms/yrw801.rom
+      required: true
+      md5: 42af93619160ef2116416f74a6cb12f2
+  msxturbor:
+    files:
+    - name: fs-a1gt_firmware.rom
+      destination: openMSX/share/systemroms/fs-a1gt_firmware.rom
+      required: true
+      md5: af17a344bcc177b97a4888c4c559f3ae
+    - name: fs-a1gt_kanjifont.rom
+      destination: openMSX/share/systemroms/fs-a1gt_kanjifont.rom
+      required: true
+      md5: acf53887c2d2783dc059a9b442c86b90
+    - name: fmpac.rom
+      destination: openMSX/share/systemroms/fmpac.rom
+      required: true
+      md5: 6f69cc8b5ed761b03afd78000dfb0e19
+    - name: yrw801.rom
+      destination: openMSX/share/systemroms/yrw801.rom
+      required: true
+      md5: 42af93619160ef2116416f74a6cb12f2
+  n64dd:
+    files:
+    - name: IPL_JAP.n64
+      destination: Mupen64plus/IPL_JAP.n64
+      required: true
+      md5: 8d3d9f294b6e174bc7b1d2fd1c727530
+    - name: IPL_USA.n64
+      destination: Mupen64plus/IPL_USA.n64
+      required: true
+      md5: 37c36e4286d36892a9fc70eafe4104be
+    - name: IPL_DEV.n64
+      destination: Mupen64plus/IPL_DEV.n64
+      required: true
+      md5: aad37b1492886b892f1821f37fd3ae34
+  naomi:
+    files:
+    - name: naomi.zip
+      destination: dc/naomi.zip
+      required: true
+      md5: eb4099aeb42ef089cfe94f8fe95e51f6
+  naomi2:
+    files:
+    - name: naomi2.zip
+      destination: dc/naomi2.zip
+      required: true
+  nds:
+    files:
+    - name: firmware.bin
+      destination: firmware.bin
+      required: true
+    - name: bios7.bin
+      destination: bios7.bin
+      required: true
+      md5: df692a80a5b1bc90728bc3dfc76cd948
+    - name: bios9.bin
+      destination: bios9.bin
+      required: true
+      md5: a392174eb3e572fed6447e956bde4b25
+    - name: dsi_bios9.bin
+      destination: dsi_bios9.bin
+      required: true
+    - name: dsi_bios7.bin
+      destination: dsi_bios7.bin
+      required: true
+    - name: dsi_firmware.bin
+      destination: dsi_firmware.bin
+      required: true
+  neogeo:
+    files:
+    - name: neogeo.zip
+      destination: neogeo.zip
+      required: true
+      md5: dffb72f116d36d025068b23970a4f6df
+  neogeo64:
+    files:
+    - name: neogeo.zip
+      destination: neogeo.zip
+      required: true
+      md5: dffb72f116d36d025068b23970a4f6df
+  neogeocd:
+    files:
+    - name: neogeo.zip
+      destination: neogeo.zip
+      required: true
+      md5: dffb72f116d36d025068b23970a4f6df
+    - name: neocdz.zip
+      destination: neocdz.zip
+      required: true
+      md5: c733b4b7bd30fa849874d96c591c8639
+    - name: neocd_f.rom
+      destination: neocd/neocd_f.rom
+      required: true
+    - name: neocd_sf.rom
+      destination: neocd/neocd_sf.rom
+      required: true
+    - name: neocd_t.rom
+      destination: neocd/neocd_t.rom
+      required: true
+    - name: neocd_st.rom
+      destination: neocd/neocd_st.rom
+      required: true
+    - name: neocd_z.rom
+      destination: neocd/neocd_z.rom
+      required: true
+    - name: neocd_sz.rom
+      destination: neocd/neocd_sz.rom
+      required: true
+    - name: front-sp1.bin
+      destination: neocd/front-sp1.bin
+      required: true
+    - name: top-sp1.bin
+      destination: neocd/top-sp1.bin
+      required: true
+    - name: neocd.bin
+      destination: neocd/neocd.bin
+      required: true
+    - name: uni-bioscd.rom
+      destination: neocd/uni-bioscd.rom
+      required: true
+  ngage:
+    files:
+    - name: SYM.ROM
+      destination: eka2l1/data/roms/NEM-4/SYM.ROM
+      required: true
+      md5: 64a95a4a884cf4cc15a566b856603193
+  ngp:
+    files:
+    - name: '[BIOS] SNK Neo Geo Pocket (Japan, Europe) (En,Ja).ngp'
+      destination: '[BIOS] SNK Neo Geo Pocket (Japan, Europe) (En,Ja).ngp'
+      required: true
+  ngpc:
+    files:
+    - name: '[BIOS] SNK Neo Geo Pocket (Japan, Europe) (En,Ja).ngp'
+      destination: '[BIOS] SNK Neo Geo Pocket (Japan, Europe) (En,Ja).ngp'
+      required: true
+  odyssey2:
+    files:
+    - name: o2rom.bin
+      destination: o2rom.bin
+      required: true
+      md5: 562d5ebf9e030a40d6fabfc2f33139fd
+    - name: c52.bin
+      destination: c52.bin
+      required: true
+      md5: f1071cdb0b6b10dde94d3bc8a6146387
+    - name: g7400.bin
+      destination: g7400.bin
+      required: true
+      md5: c500ff71236068e0dc0d0603d265ae76
+    - name: jopac.bin
+      destination: jopac.bin
+      required: true
+      md5: 279008e4a0db2dc5f1c048853b033828
+  pc88:
+    files:
+    - name: N88.ROM
+      destination: quasi88/N88.ROM
+      required: true
+      md5: 4f984e04a99d56c4cfe36115415d6eb8
+    - name: N88SUB.ROM
+      destination: quasi88/N88SUB.ROM
+      required: true
+      md5: 793f86784e5608352a5d7f03f03e0858
+    - name: N88N.ROM
+      destination: quasi88/N88N.ROM
+      required: true
+      md5: 2ff07b8769367321128e03924af668a0
+    - name: N88EXT0.ROM
+      destination: quasi88/N88EXT0.ROM
+      required: true
+      md5: d675a2ca186c6efcd6277b835de4c7e5
+    - name: N88EXT1.ROM
+      destination: quasi88/N88EXT1.ROM
+      required: true
+      md5: e844534dfe5744b381444dbe61ef1b66
+    - name: N88EXT2.ROM
+      destination: quasi88/N88EXT2.ROM
+      required: true
+      md5: 6548fa45061274dee1ea8ae1e9e93910
+    - name: N88EXT3.ROM
+      destination: quasi88/N88EXT3.ROM
+      required: true
+      md5: fc4b76a402ba501e6ba6de4b3e8b4273
+  pc98:
+    files:
+    - name: BIOS.ROM
+      destination: np2kai/BIOS.ROM
+      required: true
+      md5: e246140dec5124c5e404869a84caefce
+    - name: FONT.ROM
+      destination: np2kai/FONT.ROM
+      required: true
+      md5: 2af6179d7de4893ea0b705c00e9a98d6
+    - name: SOUND.ROM
+      destination: np2kai/SOUND.ROM
+      required: true
+      md5: caf90f22197aed6f14c471c21e64658d
+    - name: ITF.ROM
+      destination: np2kai/ITF.ROM
+      required: true
+      md5: e9fc3890963b12cf15d0a2eea5815b72
+    - name: font.bmp
+      destination: np2kai/font.bmp
+      required: true
+      md5: 7da1e5b7c482d4108d22a5b09631d967
+  pcengine:
+    files:
+    - name: syscard3.pce
+      destination: syscard3.pce
+      required: true
+      md5: 38179df8f4ac870017db21ebcbf53114
+  pcenginecd:
+    files:
+    - name: syscard3.pce
+      destination: syscard3.pce
+      required: true
+      md5: 38179df8f4ac870017db21ebcbf53114
+  pcfx:
+    files:
+    - name: pcfx.rom
+      destination: pcfx.rom
+      required: true
+      md5: 08e36edbea28a017f79f8d4f7ff9b6d7
+    - name: fx-scsi.rom
+      destination: fx-scsi.rom
+      required: true
+  pegasus:
+    files:
+    - name: pegasus.zip
+      destination: pegasus.zip
+      required: true
+      md5: fee37d8140e4fab48aac4fdab2847f7d
+    - name: pegasus_cart.xml
+      destination: mame/hash/pegasus_cart.xml
+      required: true
+  pokemini:
+    files:
+    - name: bios.min
+      destination: bios.min
+      required: true
+      md5: 1e4fb124a3a886865acb574f388c803d
+  sony-playstation-2:
+    files:
+    - name: ps2-0230a-20080220.bin
+      destination: pcsx2/bios/ps2-0230a-20080220.bin
+      required: true
+      md5: 21038400dc633070a78ad53090c53017
+  psx:
+    files:
+    - name: psxonpsp660.bin
+      destination: psxonpsp660.bin
+      required: true
+      md5: c53ca5908936d412331790f4426c6c33
+  pv1000:
+    files:
+    - name: pv1000.xml
+      destination: mame/hash/pv1000.xml
+      required: true
+  satellaview:
+    files:
+    - name: BS-X.bin
+      destination: BS-X.bin
+      required: true
+      md5: fed4d8242cfbed61343d53d48432aced
+  saturn:
+    files:
+    - name: sega_101.bin
+      destination: sega_101.bin
+      required: true
+      md5: 85ec9ca47d8f6807718151cbcca8b964
+    - name: mpr-17933.bin
+      destination: mpr-17933.bin
+      required: true
+      md5: 3240872c70984b6cbfda1586cab68dbe
+    - name: mpr-18811-mx.ic1
+      destination: mpr-18811-mx.ic1
+      required: true
+      md5: 255113ba943c92a54facd25a10fd780c
+    - name: mpr-19367-mx.ic1
+      destination: mpr-19367-mx.ic1
+      required: true
+      md5: 1cd19988d1d72a3e7caa0b73234c96b4
+    - name: saturn_bios.bin
+      destination: saturn_bios.bin
+      required: true
+      md5: af5828fdff51384f99b3c4926be27762
+    - name: saturn_bios.bin
+      destination: kronos/saturn_bios.bin
+      required: true
+      md5: af5828fdff51384f99b3c4926be27762
+  scummvm:
+    files:
+    - name: MT32_CONTROL.ROM
+      destination: scummvm/extra/MT32_CONTROL.ROM
+      required: true
+      md5: 5626206284b22c2734f3e9efefcd2675
+    - name: MT32_PCM.ROM
+      destination: scummvm/extra/MT32_PCM.ROM
+      required: true
+      md5: 89e42e386e82e0cacb4a2704a03706ca
+  scv:
+    files:
+    - name: scv.zip
+      destination: scv.zip
+      required: true
+      md5: 33df021613fb12abe2ad14b9eb17c7fe
+    - name: upd7801g.s01
+      destination: upd7801g.s01
+      required: true
+      md5: 635a978fd40db9a18ee44eff449fc126
+    - name: scv.xml
+      destination: mame/hash/scv.xml
+      required: true
+  sega32x:
+    files:
+    - name: 32X_G_BIOS.BIN
+      destination: 32X_G_BIOS.BIN
+      required: true
+    - name: 32X_M_BIOS.BIN
+      destination: 32X_M_BIOS.BIN
+      required: true
+    - name: 32X_S_BIOS.BIN
+      destination: 32X_S_BIOS.BIN
+      required: true
+  megacd:
+    files:
+    - name: bios_CD_E.bin
+      destination: bios_CD_E.bin
+      required: true
+      md5: e66fa1dc5820d254611fdcdba0662372
+    - name: bios_CD_U.bin
+      destination: bios_CD_U.bin
+      required: true
+      md5: 854b9150240a198070150e4566ae1290
+    - name: bios_CD_J.bin
+      destination: bios_CD_J.bin
+      required: true
+      md5: 278a9397d192149e84e820ac621a8edd
+  segastv:
+    files:
+    - name: stvbios.zip
+      destination: kronos/stvbios.zip
+      required: true
+  sgb:
+    files:
+    - name: sgb_boot.bin
+      destination: sgb_boot.bin
+      required: true
+      md5: d574d4f9c12f305074798f54c091a8b4
+    - name: sgb2_boot.bin
+      destination: sgb2_boot.bin
+      required: true
+      md5: e0430bca9925fb9882148fd2dc2418c1
+    - name: SGB1.sfc
+      destination: SGB1.sfc
+      required: true
+      md5: b15ddb15721c657d82c5bab6db982ee9
+    - name: SGB2.sfc
+      destination: SGB2.sfc
+      required: true
+      md5: 8ecd73eb4edf7ed7e81aef1be80031d5
+  sufami:
+    files:
+    - name: STBIOS.bin
+      destination: STBIOS.bin
+      required: true
+      md5: d3a44ba7d42a74d3ac58cb9c14c6a5ca
+  supergrafx:
+    files:
+    - name: syscard3.pce
+      destination: syscard3.pce
+      required: true
+      md5: 38179df8f4ac870017db21ebcbf53114
+  supracan:
+    files:
+    - name: supracan.zip
+      destination: supracan.zip
+      required: true
+    - name: umc6650.zip
+      destination: umc6650.zip
+      required: true
+    - name: supracan.xml
+      destination: mame/hash/supracan.xml
+      required: true
+  ti99:
+    files:
+    - name: ti99_4a.zip
+      destination: ti99_4a.zip
+      required: true
+    - name: ti99_speech.zip
+      destination: ti99_speech.zip
+      required: true
+    - name: ti99_cart.xml
+      destination: mame/hash/ti99_cart.xml
+      required: true
+  triforce:
+    files:
+    - name: segaboot.gcm
+      destination: emulators/dolphin-emu/User/Triforce/segaboot.gcm
+      required: true
+  tutor:
+    files:
+    - name: tutor.zip
+      destination: tutor.zip
+      required: true
+    - name: tutor.xml
+      destination: mame/hash/tutor.xml
+      required: true
+  vc4000:
+    files:
+    - name: vc4000.xml
+      destination: mame/hash/vc4000.xml
+      required: true
+  vectrex:
+    files:
+    - name: Vectrex_Bios.bin
+      destination: Vectrex_Bios.bin
+      required: true
+  vg5k:
+    files:
+    - name: vg5k.zip
+      destination: vg5k.zip
+      required: true
+    - name: vg5k.xml
+      destination: mame/hash/vg5k.xml
+      required: true
+  vsmile:
+    files:
+    - name: vsmile.zip
+      destination: vsmile.zip
+      required: true
+    - name: vsmile_cart.xml
+      destination: mame/hash/vsmile_cart.xml
+      required: true
+    - name: vsmile_cd.xml
+      destination: mame/hash/vsmile_cd.xml
+      required: true
+    - name: vsmilem_cart.xml
+      destination: mame/hash/vsmilem_cart.xml
+      required: true
+    - name: vsmileb_cart.xml
+      destination: mame/hash/vsmileb_cart.xml
+      required: true
+  x1:
+    files:
+    - name: IPLROM.X1
+      destination: xmil/IPLROM.X1
+      required: true
+      md5: eeeea1cd29c6e0e8b094790ae969bfa7
+    - name: iplrom.x1t
+      destination: xmil/iplrom.x1t
+      required: true
+      md5: 56c28adcf1f3a2f87cf3d57c378013f5
+  x68000:
+    files:
+    - name: iplrom.dat
+      destination: keropi/iplrom.dat
+      required: true
+      md5: 7fd4caabac1d9169e289f0f7bbf71d8e
+    - name: cgrom.dat
+      destination: keropi/cgrom.dat
+      required: true
+      md5: cb0a5cfcf7247a7eab74bb2716260269
+  xbox:
+    files:
+    - name: mcpx_1.0.bin
+      destination: mcpx_1.0.bin
+      required: true
+      md5: d49c52a4102f6df7bcf8d0617ac475ed
+    - name: Complex_4627.bin
+      destination: Complex_4627.bin
+      required: true
+      md5: 39cee882148a87f93cb440b99dde3ceb
+  xegs:
+    files:
+    - name: xegs.zip
+      destination: xegs.zip
+      required: true
+    - name: xegs.xml
+      destination: mame/hash/xegs.xml
+      required: true

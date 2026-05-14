@@ -1,0 +1,314 @@
+# Shared BIOS Groups
+# BIOS files used across multiple systems/platforms.
+# Referenced via `includes: [group_name]` in platform configs.
+
+shared_groups:
+  mt32:
+    - name: MT32_CONTROL.ROM
+      sha1: "b083518fffb7f66b03c23b7eb4f868e62dc5a987"
+      md5: "5626206284b22c2734f3e9efefcd2675"
+      destination: "scummvm/extra/MT32_CONTROL.ROM"
+      required: false
+    - name: MT32_PCM.ROM
+      sha1: "f6b1eebc4b2d200ec6d3d21d51325d5b48c60252"
+      md5: "89e42e386e82e0cacb4a2704a03706ca"
+      destination: "scummvm/extra/MT32_PCM.ROM"
+      required: false
+
+  jiffydos:
+    - name: JiffyDOS_C128.bin
+      sha1: "7d1898f32beae4b2ae610d469ce578a588efaa7c"
+      destination: "vice/JiffyDOS_C128.bin"
+      required: false
+    - name: JiffyDOS_C64.bin
+      sha1: "31e73e66eccb28732daea8ec3ad1addd9b39a017"
+      destination: "vice/JiffyDOS_C64.bin"
+      required: false
+    - name: JiffyDOS_1541-II.bin
+      sha1: "b1a5b826304d3df2a27d7163c6a81a532e040d32"
+      destination: "vice/JiffyDOS_1541-II.bin"
+      required: false
+    - name: JiffyDOS_1571_repl310654.bin
+      sha1: "d4b79b60cf1eaa399d0932200eb7811e00455249"
+      destination: "vice/JiffyDOS_1571_repl310654.bin"
+      required: false
+    - name: JiffyDOS_1581.bin
+      sha1: "65bbf2be7bcd5bdcbff609d6c66471ffb9d04bfe"
+      destination: "vice/JiffyDOS_1581.bin"
+      required: false
+
+  # NEC PC-9801/9821 — NP2kai core
+  # np2kai hardcodes "np2kai/" subfolder for firmware lookups
+  # ref: NP2kai/sdl/libretro/libretro.c:1804,1806 — milstr_ncat(np2path, "/np2kai")
+  np2kai:
+    - name: bios.rom
+      destination: np2kai/bios.rom
+      required: true
+      sha1: "76a7360502fa0296ea93b4c537174610a834d367"
+      md5: "cd237e16e7e77c06bb58540e9e9fca68"
+      crc32: "0a682b93"
+      size: 98304
+    - name: font.rom
+      destination: np2kai/font.rom
+      required: true
+      sha1: "78ba9960f135372825ab7244b5e4e73a810002ff"
+      md5: "38d32748ae49d1815b0614970849fd40"
+      crc32: "456d9fc7"
+      size: 288768
+    - name: itf.rom
+      destination: np2kai/itf.rom
+      required: true
+      sha1: "a2fb11c000ed7c976520622cfb7940ed6ddc904e"
+      md5: "72ea51443070f0e9212bfc9b793ee28e"
+      crc32: "c1815325"
+      size: 32768
+    - name: sound.rom
+      destination: np2kai/sound.rom
+      required: true
+      sha1: "d5dbc4fea3b8367024d363f5351baecd6adcd8ef"
+      md5: "524473c1a5a03b17e21d86a0408ff827"
+      crc32: "fe9f57f2"
+      size: 16384
+    - name: font.bmp
+      destination: np2kai/font.bmp
+      required: true
+      sha1: "b4f14e58030ed40fff2dc312b58ea4440bdf8cc5"
+      md5: "7da1e5b7c482d4108d22a5b09631d967"
+      crc32: "d271798b"
+      size: 524350
+    - name: 2608_bd.wav
+      destination: np2kai/2608_bd.wav
+      required: true
+      sha1: "0a56c142ef40cec50f3ee56a6e42d0029c9e2818"
+      md5: "d94546e70f17fd899be8df3544ab6cbb"
+      crc32: "bb038714"
+      size: 19192
+    - name: 2608_sd.wav
+      destination: np2kai/2608_sd.wav
+      required: true
+      sha1: "3c79663ef74c0b0439d13351326eb1c52a657008"
+      md5: "d71004351c8bbfdad53b18222c061d49"
+      crc32: "542cc58c"
+      size: 15558
+    - name: 2608_top.wav
+      destination: np2kai/2608_top.wav
+      required: true
+      sha1: "aa4a8f766a86b830687d5083fd3b9db0652f46fc"
+      md5: "593cff6597ab9380d822b8f824fd2c28"
+      crc32: "ab73a296"
+      size: 57016
+    - name: 2608_hh.wav
+      destination: np2kai/2608_hh.wav
+      required: true
+      sha1: "12f676cef249b82480b6f19c454e234b435ca7b6"
+      md5: "08c54a0c1f774a5538a848a6665a34b4"
+      crc32: "9898b372"
+      size: 36722
+    - name: 2608_tom.wav
+      destination: np2kai/2608_tom.wav
+      required: true
+      sha1: "9513fb4a3f41e75a972a273a5104cbd834c1e2c5"
+      md5: "96a4ead13f364734f79b0c58af2f0e1f"
+      crc32: "93c57bba"
+      size: 23092
+    - name: 2608_rim.wav
+      destination: np2kai/2608_rim.wav
+      required: true
+      sha1: "c65592330c9dd84011151daed52f9aec926b7e56"
+      md5: "465ea0768b27da404aec45dfc501404b"
+      crc32: "638864c1"
+      size: 5288
+
+  # Sharp X68000 — PX68k core
+  # PX68k hardcodes "keropi/" subfolder for ROM lookups
+  # ref: px68k-libretro/libretro.c:1834 — sprintf(retro_system_conf, "%s%ckeropi", ...)
+  keropi:
+    - name: cgrom.dat
+      destination: keropi/cgrom.dat
+      required: true
+      sha1: "8d72c5b4d63bb14c5dbdac495244d659aa1498b6"
+      md5: "cb0a5cfcf7247a7eab74bb2716260269"
+      crc32: "9f3195f1"
+      size: 786432
+    - name: iplrom.dat
+      destination: keropi/iplrom.dat
+      required: true
+      sha1: "0ed038ed2133b9f78c6e37256807424e0d927560"
+      md5: "7fd4caabac1d9169e289f0f7bbf71d8e"
+      crc32: "72bdf532"
+      size: 131072
+    - name: iplrom30.dat
+      destination: keropi/iplrom30.dat
+      required: true
+      sha1: "239e9124568c862c31d9ec0605e32373ea74b86a"
+      md5: "f373003710ab4322642f527f567e020a"
+      crc32: "e8f8fdad"
+      size: 131072
+    - name: iplromco.dat
+      destination: keropi/iplromco.dat
+      required: true
+      sha1: "77511fc58798404701f66b6bbc9cbde06596eba7"
+      md5: "cc78d4f4900f622bd6de1aed7f52592f"
+      crc32: "6c7ef608"
+      size: 131072
+    - name: iplromxv.dat
+      destination: keropi/iplromxv.dat
+      required: true
+      sha1: "e33cdcdb69cd257b0b211ef46e7a8b144637db57"
+      md5: "0617321daa182c3f3d6f41fd02fb3275"
+      crc32: "00eeb408"
+      size: 131072
+
+  # NEC PC-8801 — QUASI88 core
+  # QUASI88 searches "quasi88/" subfolder first
+  # ref: quasi88-libretro/src/LIBRETRO/libretro.c:463 — snprintf(..., "%s%cquasi88%c%s", ...)
+  quasi88:
+    - name: N88.ROM
+      destination: quasi88/N88.ROM
+      required: true
+      md5: "4f984e04a99d56c4cfe36115415d6eb8"
+    - name: N88SUB.ROM
+      destination: quasi88/N88SUB.ROM
+      required: true
+      md5: "793f86784e5608352a5d7f03f03e0858"
+    - name: N88N.ROM
+      destination: quasi88/N88N.ROM
+      required: true
+      md5: "2ff07b8769367321128e03924af668a0"
+    - name: N88KNJ1.ROM
+      destination: quasi88/N88KNJ1.ROM
+      required: true
+      md5: "d81c6d5d7ad1a4bbbd6ae22a01257603"
+    - name: N88EXT0.ROM
+      destination: quasi88/N88EXT0.ROM
+      required: true
+      md5: "d675a2ca186c6efcd6277b835de4c7e5"
+    - name: N88EXT1.ROM
+      destination: quasi88/N88EXT1.ROM
+      required: true
+      md5: "e844534dfe5744b381444dbe61ef1b66"
+    - name: N88EXT2.ROM
+      destination: quasi88/N88EXT2.ROM
+      required: true
+      md5: "6548fa45061274dee1ea8ae1e9e93910"
+    - name: N88EXT3.ROM
+      destination: quasi88/N88EXT3.ROM
+      required: true
+      md5: "fc4b76a402ba501e6ba6de4b3e8b4273"
+    # Alternative naming from libretro docs (lowercase, _N suffix)
+    # ref: quasi88/src/libretro.c — core accepts both conventions
+    - name: n88_0.rom
+      destination: quasi88/n88_0.rom
+      required: false
+      md5: "e28fe3f520bea594350ea8fb00395370"
+    - name: n88_1.rom
+      destination: quasi88/n88_1.rom
+      required: false
+      md5: "a8e298da7ac947669bcb1ff25cee0a83"
+    - name: n88_2.rom
+      destination: quasi88/n88_2.rom
+      required: false
+      md5: "9d03154fd9abfc28c4e6d4dc705e6e23"
+    - name: n88_3.rom
+      destination: quasi88/n88_3.rom
+      required: false
+      md5: "e1791f8154f1cdf22b576a1a365b6e1f"
+
+  # Sinclair ZX Spectrum — Fuse core (Pentagon/Scorpion ROMs)
+  # VERIFIED: fuse-libretro/src/compat/paths.c compat_get_next_path()
+  # returns empty path — core searches system/ FLAT, not fuse/ subfolder.
+  # The libretro docs incorrectly show "fuse/" prefix. Tested against
+  # fuse/settings.c:221-229 which defines names without prefix.
+  # Shared group kept for platforms that DO use the fuse/ prefix (Recalbox).
+  fuse:
+    - name: 128p-0.rom
+      destination: fuse/128p-0.rom
+      required: true
+      sha1: "d07fcdeca892ee80494d286ea9ea5bf3928a1aca"
+      md5: "a249565f03b98d004ee7f019570069cd"
+      size: 16384
+    - name: 128p-1.rom
+      destination: fuse/128p-1.rom
+      required: true
+    - name: trdos.rom
+      destination: fuse/trdos.rom
+      required: true
+      sha1: "21695e3f2a8f796386ce66eea8a246b0ac44810c"
+      md5: "0da70a5d2a0e733398e005b96b7e4ba6"
+      size: 16384
+    - name: gluck.rom
+      destination: fuse/gluck.rom
+      required: true
+      sha1: "015eb96dafb273d4f4512c467e9b43c305fd1bc4"
+      md5: "d5869034604dbfd2c1d54170e874fd0a"
+      size: 16384
+    - name: 256s-0.rom
+      destination: fuse/256s-0.rom
+      required: true
+      sha1: "477114ff0fe1388e0979df1423602b21248164e5"
+      md5: "b9fda5b6a747ff037365b0e2d8c4379a"
+      size: 16384
+    - name: 256s-1.rom
+      destination: fuse/256s-1.rom
+      required: true
+      sha1: "367b5a102fb663beee8e7930b8c4acc219c1f7b3"
+      md5: "643861ad34831b255bf2eb64e8b6ecb8"
+      size: 16384
+    - name: 256s-2.rom
+      destination: fuse/256s-2.rom
+      required: true
+      sha1: "07783ee295274d8ff15d935bfd787c8ac1d54900"
+      md5: "d8ad507b1c915a9acfe0d73957082926"
+      size: 16384
+    - name: 256s-3.rom
+      destination: fuse/256s-3.rom
+      required: true
+      sha1: "33703e97cc93b7edfcc0334b64233cf81b7930db"
+      md5: "ce0723f9bc02f4948c15d3b3230ae831"
+      size: 16384
+
+  # Enterprise 128 / Videoton TVC — ep128emu core
+  # ep128emu loads ROMs from "ep128emu/roms/" subfolder
+  # ref: ep128emu-core/core/core.cpp:56,59 — romBasePath.append("/ep128emu/roms/")
+  # since v1.1.0 external BIOS is optional (built-in fallback)
+  ep128emu:
+    - name: hun.rom
+      destination: ep128emu/roms/hun.rom
+      required: false
+      md5: "22167938f142c222f40992839aa21a06"
+    - name: exos21.rom
+      destination: ep128emu/roms/exos21.rom
+      required: false
+      md5: "f36f24cbb87745fbd2714e4df881db09"
+    - name: basic21.rom
+      destination: ep128emu/roms/basic21.rom
+      required: false
+      md5: "e972fe42b398c9ff1d93ff014786aec6"
+    - name: exdos13.rom
+      destination: ep128emu/roms/exdos13.rom
+      required: false
+      md5: "ddff70c014d1958dc75378b6c9aab6f8"
+    - name: basic20.rom
+      destination: ep128emu/roms/basic20.rom
+      required: false
+      md5: "8e18edce4a7acb2c33cc0ab18f988482"
+    - name: exos20.rom
+      destination: ep128emu/roms/exos20.rom
+      required: false
+      md5: "5ad3baaad3b5156d6b60b34229a676fb"
+    - name: brd.rom
+      destination: ep128emu/roms/brd.rom
+      required: false
+      md5: "6af0402906944fd134004b85097c8524"
+
+  # Sega Saturn — Kronos core
+  # Kronos searches "kronos/" subfolder first, falls back to root
+  # ref: libretro-kronos/libretro/libretro.c, docs.libretro.com/library/kronos
+  kronos:
+    - name: saturn_bios.bin
+      destination: kronos/saturn_bios.bin
+      required: true
+      sha1: "2b8cb4f87580683eb4d760e4ed210813d667f0a2"
+      md5: "af5828fdff51384f99b3c4926be27762"
+      crc32: "2aba43c2"
+      size: 524288
