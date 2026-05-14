@@ -226,9 +226,17 @@ BizHawk declares SHA1 hashes for most files rather than MD5. Files with no decla
 
 **Verified** — a stored blob's hash matches a hash declared for this canonical by at least one platform.
 
-**Unverifiable** — stored, but no platform declares any hash to check against. The file cannot be confirmed correct, but it is not missing.
+**Unverifiable** — stored, but no platform declares any hash to check against. The file cannot be confirmed correct, but it is not missing. The verify pass (Pass 3 of Build) assigns a confidence level to every unverifiable blob:
 
-**Hash mismatch** — stored, but the blob's hash matches none of the declared values. You have a file, but it appears to be the wrong version.
+- **High confidence** — 2 or more platforms declare this file, or the blob's non-MD5 hashes match a verified blob stored under a different canonical name. You almost certainly have the right file.
+- **Low confidence** — exactly 1 platform declares this file. The file is staged correctly but cannot be independently corroborated.
+- **Unresolved** — no platform corroboration was found (should not occur in normal operation).
+
+**Hash mismatch** — stored, but the blob's hash matches none of the declared values. You have a file, but it appears to be the wrong version. The verify pass (Pass 3 of Build) assigns a confidence level to every hash mismatch blob on the same basis as unverifiable blobs:
+
+- **High confidence** — 2 or more platforms declare this file, or the blob's non-MD5 hashes match a verified blob stored under a different canonical name. Getting the correct version should be a priority.
+- **Low confidence** — exactly 1 platform declares this file. Lower priority to resolve.
+- **Unresolved** — not yet annotated (should not occur in normal operation).
 
 > **A file's identity is its hash, not its name.** `BIOS.ROM`, `bios.rom`, and `Boot.ROM` are the same file if they share the same MD5. Filename case is always preserved exactly as declared in the source YAML.
 
@@ -275,6 +283,11 @@ Sources may be local directories, local archive files (zip, 7z, rar, tar, tar.gz
 - **Pass 1 — filename + hash matching:** Matches by declared filename first, then by any declared hash. Covers well-organised collections where filenames are correct.
 - **Pass 2 — MD5-only matching:** Hashes every file and looks it up purely by MD5, ignoring filenames. Catches renamed or arbitrarily named files.
 
+**Post-scan passes:** After all sources are scanned, two reconciliation passes run automatically:
+
+- **Alias reconciliation** — finds canonicals whose bytes are already stored under a different canonical name (e.g. two platforms calling the same file by different names) and registers them in the alias table. Removes stale wrong-version blobs that are superseded by a verified alias.
+- **Verify pass** — runs when `verify_pass = true` in config (default). Processes every unverifiable and mismatch_accepted blob in two stages: (1) if the blob's SHA256/SHA1/CRC32 matches a verified blob under a different canonical name, the two are the same bytes — the duplicate is removed and registered as an alias to the verified target; (2) otherwise, the blob stays put and is annotated with a confidence level — **high** if two or more platforms declare the file, **low** if exactly one platform declares it. This confidence appears in the build summary and the shopping list `Confidence` column.
+
 **Multi-variant storage:** When a canonical has multiple valid MD5 hashes declared across platforms (regional versions of the same BIOS), all distinct verified variants are stored as separate blobs. When staging, the variant whose MD5 matches what the target platform declares is used; if no match exists, the first verified variant is used.
 
 **Build summary example:**
@@ -288,13 +301,20 @@ Sources may be local directories, local archive files (zip, 7z, rar, tar, tar.gz
   verified   — blob hash matches a declared value
   unverifiable — stored but no declared hash to check against
   hash mismatch — stored but blob hash matches none of the declared values
+  high confidence — file confirmed by 2+ platforms
+  low  confidence — file declared by exactly 1 platform
 
 [build] Collection summary — 2198 canonical(s) across all platforms:
-  Present  :   2112  (at least one blob stored)
-    verified          :   1740
+  Present  :   2198  (at least one blob stored)
+    verified          :   1794
     unverifiable      :    141
+      high confidence :     19  (2+ platforms corroborate)
+      low  confidence :    114  (1 platform)
+      unresolved      :      8
     hash mismatch     :    231
-  Via alias:     54  (bytes stored under a different canonical name)
+      high confidence :    187  (2+ platforms corroborate)
+      low  confidence :     44  (1 platform)
+      unresolved      :      0
   Missing  :      0  (not yet found in any source, across all platforms)
 
   Blobs stored : 2816 total  (2084 verified, 129 canonical(s) with multiple verified variants)
@@ -309,7 +329,7 @@ Sources may be local directories, local archive files (zip, 7z, rar, tar, tar.gz
 
 The `Missing` count is global — canonicals absent from the database across all platforms combined. Per-platform counts in the Report step cover only the files that platform declares, so they will always be lower than the totals shown above.
 
-The `Via alias` line appears when canonicals are present whose bytes are stored under a different canonical name (see [Core Concepts](#core-concepts)). These are fully resolved and do not appear on the shopping list.
+The `verified` count includes canonicals whose bytes are stored under a different canonical name (aliases — see [Core Concepts](#core-concepts) and DEVELOPER_NOTES §4). Aliases always point at a verified blob, so from a user's perspective an aliased canonical is functionally verified — staging produces a verified file.
 
 **Outputs** (written to `build/`):
 - `bios_database.sqlar` — the database
@@ -392,6 +412,7 @@ Columns:
 - **Known Aliases** — all filenames this file is known by
 - **Expected MD5** — the MD5 to search for (`unknown` if no MD5 is declared anywhere)
 - **Status** — `missing` / `hash_mismatch` / `unverifiable`
+- **Confidence** — for `unverifiable` entries: `high` (2+ platforms corroborate), `low` (1 platform), or `unresolved`. For `hash_mismatch` entries: same scale — `high` if 2+ platforms declare the file, `low` if only 1 platform declares it. Blank for `missing` entries. (Note: blobs where a non-MD5 hash matched a verified blob under a different canonical name are removed from the shopping list entirely — they become aliases and are functionally verified.)
 - **Platforms** — which platforms need this file or version
 - **Actual MD5** — what is currently stored (`not present` for missing files)
 
@@ -399,7 +420,7 @@ For `hash_mismatch` entries, **Expected MD5** is what you need to find; **Actual
 
 Console summary:
 ```
-Global shopping list → ...\global_shopping_list.csv  (2 missing, 278 hash_mismatch, 141 unverifiable)
+Global shopping list → ...\global_shopping_list.csv  (2 missing, 278 hash_mismatch  [high: 234  low: 44  unresolved: 0], 141 unverifiable  [high: 19  low: 114  unresolved: 8])
 ```
 
 ---
@@ -476,7 +497,7 @@ The build summary counts **canonicals across all platforms combined**. Each plat
 
 The blob count on the `Blobs stored:` line can exceed the canonical count. This happens when multiple verified regional variants of the same BIOS are stored (e.g. Japanese and US versions of the same file). Both count as one canonical but two blobs.
 
-The `via alias` line in the summary counts canonicals whose physical bytes are already stored under a different canonical name — they have no blob of their own but are fully resolved. They are included in the total so the summary canonical count matches the manifest.
+Canonicals whose physical bytes are stored under a different canonical name (aliases) are rolled into the `verified` count in the summary — they have no blob of their own but staging produces a verified file for them, so they are functionally verified from a user's perspective. The alias relationship is preserved internally for diagnostics (see DEVELOPER_NOTES §4).
 
 ### Shopping list row count
 
@@ -526,6 +547,7 @@ sqlar_output   = build/bios_database.sqlar
 json_output    = build/combined_platform_build.json
 csv_output     = build/combined_platform_build.csv
 incremental    = true        # false = delete database and rebuild from scratch
+verify_pass    = true        # false = skip confidence annotation of unverifiable and mismatch blobs
 temp_dir       = temp        # .7z extraction workspace; point at a larger drive if needed
 # Source locations — also managed interactively at runtime
 # source_1 = C:/Users/you/bios_collection
