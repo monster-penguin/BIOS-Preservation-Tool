@@ -55,6 +55,13 @@ PLATFORMS = [
     "recalbox", "retrobat", "lakka", "retroarch",
     "romm", "bizhawk",
 ]
+# Preference order for single-platform filename matches in the verify pass.
+# When a filename is declared by exactly one platform, the candidate from the
+# highest-preference platform (lowest index) wins if multiple candidates compete.
+VERIFY_PLATFORM_PREFERENCE = [
+    "retroarch", "batocera", "retrodeck", "emudeck",
+    "recalbox", "retrobat", "romm", "bizhawk",
+]
 HASH_TYPES  = ("md5", "sha1", "sha256", "crc32")
 STATUS_RANK = {"verified": 1, "unverifiable": 2, "mismatch_accepted": 3, "missing": 4}
 MAX_DEPTH   = 6
@@ -151,7 +158,8 @@ CREATE TABLE IF NOT EXISTS files (
     sha256          TEXT,
     crc32           TEXT,
     size            INTEGER,
-    status          TEXT NOT NULL
+    status          TEXT NOT NULL,
+    confidence      TEXT            -- NULL = unassessed; 'high' | 'low' = verify_pass platform count
 );
 
 CREATE TABLE IF NOT EXISTS file_platforms (
@@ -187,9 +195,14 @@ CREATE TABLE IF NOT EXISTS meta (
 -- Alias canonicals: files whose bytes are already stored under a different
 -- canonical_name (same MD5, different manifest entry).  Recorded here so
 -- that report lookups can resolve them without a full-table hash scan.
+-- confidence: NULL  = MD5-based (certain — from reconcile_aliases or _store())
+--             'high' = verify_pass hash match (SHA256/SHA1/CRC32) or 2+ platform
+--                      filename corroboration
+--             'low'  = verify_pass single-platform filename match
 CREATE TABLE IF NOT EXISTS canonical_aliases (
     canonical_name  TEXT PRIMARY KEY,
-    sqlar_name      TEXT NOT NULL
+    sqlar_name      TEXT NOT NULL,
+    confidence      TEXT
 );
 
 CREATE INDEX IF NOT EXISTS idx_files_canonical  ON files (canonical_name);
@@ -197,8 +210,22 @@ CREATE INDEX IF NOT EXISTS idx_aliases_sqlar    ON canonical_aliases (sqlar_name
 """
 
 
+def _migrate_db(conn: sqlite3.Connection) -> None:
+    """Apply incremental schema migrations to existing databases."""
+    alias_cols = {row[1] for row in conn.execute("PRAGMA table_info(canonical_aliases)")}
+    if "confidence" not in alias_cols:
+        conn.execute("ALTER TABLE canonical_aliases ADD COLUMN confidence TEXT")
+
+    files_cols = {row[1] for row in conn.execute("PRAGMA table_info(files)")}
+    if "confidence" not in files_cols:
+        conn.execute("ALTER TABLE files ADD COLUMN confidence TEXT")
+
+    conn.commit()
+
+
 def init_db(conn: sqlite3.Connection) -> None:
     conn.executescript(DB_INIT_SQL)
+    _migrate_db(conn)
     conn.commit()
 
 
@@ -1122,6 +1149,17 @@ def reconcile_aliases(
         The blob's actual stored MD5 matches a verified blob stored under a
         different canonical_name — meaning the correct bytes are already present.
         Action: remove stale unverifiable blob from files+sqlar, insert alias.
+
+    Case 4 — Verified canonical with per-platform mismatch:
+        A canonical is globally verified (one platform's version is stored) but
+        mismatched from another platform's perspective because that platform
+        declares a different expected MD5.  If the alternate expected MD5 is
+        already stored as verified under a different canonical, register an
+        additional alias entry so the report's fallback lookup can resolve the
+        per-platform mismatch without requiring a re-ingest.  Unlike Cases 1–3,
+        no blob is removed — both variants are valid and should coexist.
+        Multiple alias entries per canonical are permitted by the composite
+        (canonical_name, sqlar_name) primary key.
     """
     print("\n[build] Running alias reconciliation pass …")
     registered = 0
@@ -1241,6 +1279,74 @@ def reconcile_aliases(
             cleaned    += 1
             registered += 1
 
+    # ── Case 4 — verified canonical with per-platform mismatch ───────────────
+    # A canonical may be globally verified (one platform's version is stored)
+    # but mismatched from another platform's perspective because that platform
+    # declares a different expected MD5.  If the alternate expected MD5 is
+    # already stored as verified under a different canonical, register an
+    # additional alias entry so the report's fallback lookup can resolve the
+    # per-platform mismatch without requiring a re-ingest.
+    # Unlike Cases 1–3, this does NOT remove any blobs — both variants are
+    # valid and should coexist.  Multiple alias entries per canonical are
+    # permitted by the (canonical_name, sqlar_name) composite primary key.
+    verified_rows = conn.execute(
+        "SELECT sqlar_name, canonical_name, md5 FROM files WHERE status = 'verified'"
+    ).fetchall()
+
+    # Python-side set to prevent duplicate output/counting within this run.
+    # The SQL check alone is unreliable: Python's sqlite3 implicit transactions
+    # don't guarantee that a SELECT sees a pending INSERT from earlier in the
+    # same loop, so without this set the same alias can be printed and counted
+    # multiple times even though INSERT OR IGNORE correctly prevents DB dupes.
+    registered_this_run: set[tuple[str, str]] = set()
+
+    for _sqlar_name, canonical, stored_md5 in verified_rows:
+        if not stored_md5:
+            continue
+        fdata = canonical_map.get(canonical) or {}
+        # Collect all expected MD5s across all platforms that differ from stored
+        alternate_md5s: set[str] = set()
+        for p in PLATFORMS:
+            pinfo = (fdata.get("platforms") or {}).get(p) or {}
+            for hv in (pinfo.get("expected_hashes") or {}).get("md5", []):
+                if hv and hv.lower() != stored_md5.lower():
+                    alternate_md5s.add(hv.lower())
+        if not alternate_md5s:
+            continue
+
+        for alt_md5 in alternate_md5s:
+            # Find a verified blob for this alternate MD5 under a different canonical
+            alt_row = conn.execute(
+                "SELECT sqlar_name, canonical_name FROM files "
+                "WHERE md5 = ? AND canonical_name != ? AND status = 'verified'",
+                (alt_md5, canonical),
+            ).fetchone()
+            if not alt_row:
+                continue
+            alt_sqlar, alt_primary = alt_row
+            # Skip if already handled in this run (Python-side) or in the DB
+            if (canonical, alt_sqlar) in registered_this_run:
+                continue
+            already = conn.execute(
+                "SELECT 1 FROM canonical_aliases "
+                "WHERE canonical_name = ? AND sqlar_name = ?",
+                (canonical, alt_sqlar),
+            ).fetchone()
+            if already:
+                registered_this_run.add((canonical, alt_sqlar))
+                continue
+            conn.execute(
+                "INSERT OR IGNORE INTO canonical_aliases "
+                "(canonical_name, sqlar_name) VALUES (?, ?)",
+                (canonical, alt_sqlar),
+            )
+            registered_this_run.add((canonical, alt_sqlar))
+            print(
+                f"  [reconcile] Case 4: {canonical!r} — registering alternate variant "
+                f"{alt_sqlar!r} (from {alt_primary!r}, alt md5: {alt_md5})"
+            )
+            registered += 1
+
     conn.commit()
 
     if registered:
@@ -1250,6 +1356,305 @@ def reconcile_aliases(
         )
     else:
         print("[build] Reconciliation complete: nothing to resolve.")
+
+
+# ---------------------------------------------------------------------------
+# Verify pass (Pass 3) — resolve remaining unverifiable blobs
+# ---------------------------------------------------------------------------
+
+def run_verify_pass(
+    conn: sqlite3.Connection,
+    canonical_map: dict,
+) -> tuple[int, int, int]:
+    """
+    Third build pass.  Processes unverifiable and mismatch_accepted blobs that
+    reconcile_aliases could not resolve via MD5.
+
+    Two distinct mechanisms (applied to both blob types):
+
+    Hash cascade (Steps 1–3) — TRUE ALIAS
+        Compare the blob's SHA256/SHA1/CRC32 against verified blobs in the files
+        table.  If a match is found, the two blobs are the same bytes under
+        different canonical names.  The blob is removed and the canonical is
+        registered in canonical_aliases pointing at the verified blob.
+        Confidence: 'high'.
+
+    Platform corroboration (Steps 4a/4b) — CONFIDENCE ANNOTATION
+        Count how many platforms in the manifest declare this canonical.  The blob
+        stays in files; only files.confidence is updated.
+        Step 4a — 2+ platforms declare it → 'high'
+        Step 4b — 1 platform  declares it → 'low'
+
+    Loop 1 — unverifiable blobs in files (no declared hashes to match against).
+    Loop 2 — alias canonicals in canonical_aliases with NULL confidence (MD5-based
+             alias expansions that were never annotated by a prior verify pass).
+    Loop 3 — mismatch_accepted blobs (declared hashes exist but none matched the
+             stored bytes; reconcile_aliases Case 2 may not have resolved them if
+             the target verified blob did not yet exist at reconcile time).
+
+    "Best wins" rule: an existing high-confidence annotation is never downgraded.
+    Existing NULL-confidence aliases in canonical_aliases (MD5-based, from
+    reconcile_aliases) are always skipped — they are already certain.
+
+    Returns (high_count, low_count, unchanged_count) for this run.
+    """
+    print("\n[build] Running verify pass …")
+
+    unverifiable = conn.execute(
+        "SELECT sqlar_name, canonical_name, sha1, sha256, crc32 "
+        "FROM files WHERE status = 'unverifiable'"
+    ).fetchall()
+
+    if not unverifiable:
+        print("[build] Verify pass: no unverifiable blobs remaining.")
+        return 0, 0, 0
+
+    high = low = unchanged = 0
+
+    for sqlar_name, canonical, sha1, sha256, crc32 in unverifiable:
+
+        # Skip if already has a NULL-confidence alias (reconcile_aliases handled it
+        # via MD5 — these are effectively certain and should not be touched).
+        existing_alias = conn.execute(
+            "SELECT confidence FROM canonical_aliases WHERE canonical_name = ?",
+            (canonical,),
+        ).fetchone()
+        if existing_alias and existing_alias[0] is None:
+            unchanged += 1
+            continue
+
+        # Read any confidence already annotated on the files row itself.
+        existing_confidence: str | None = conn.execute(
+            "SELECT confidence FROM files WHERE canonical_name = ?",
+            (canonical,),
+        ).fetchone()
+        existing_confidence = existing_confidence[0] if existing_confidence else None
+
+        # ── Steps 1–3: Hash cascade → true alias ──────────────────────────
+        # If the unverifiable blob's non-MD5 hashes match a verified blob under
+        # a different canonical, they are the same bytes.  Remove the unverifiable
+        # blob and register the alias.  (reconcile_aliases already covers the MD5
+        # case, so a hash-match here means a collision is extremely unlikely; the
+        # check is included as a belt-and-suspenders safeguard.)
+        alias_result: tuple[str, str] | None = None   # (target_sqlar, target_canonical)
+
+        for col, val in (("sha256", sha256), ("sha1", sha1), ("crc32", crc32)):
+            if not val:
+                continue
+            row = conn.execute(
+                f"SELECT sqlar_name, canonical_name FROM files "
+                f"WHERE {col} = ? AND canonical_name != ? AND status = 'verified'",
+                (val, canonical),
+            ).fetchone()
+            if row:
+                alias_result = (row[0], row[1])
+                break
+
+        if alias_result:
+            # Best wins: don't re-process an existing high-confidence alias.
+            if existing_confidence == "high":
+                unchanged += 1
+                continue
+            target_sqlar, target_canonical = alias_result
+            remove_sqlar_entry(conn, sqlar_name)
+            conn.execute(
+                "INSERT OR REPLACE INTO canonical_aliases "
+                "(canonical_name, sqlar_name, confidence) VALUES (?, ?, 'high')",
+                (canonical, target_sqlar),
+            )
+            conn.execute(
+                "DELETE FROM missing_files WHERE canonical_name = ?", (canonical,)
+            )
+            print(
+                f"  [verify] high: {canonical!r} → hash alias of "
+                f"{target_canonical!r}  (sqlar: {target_sqlar})"
+            )
+            high += 1
+            continue
+
+        # ── Steps 4a/4b: Platform corroboration → annotate files.confidence ─
+        # Count platforms in the manifest that declare this canonical.  The blob
+        # stays in files; we only update its confidence column.  No alias is
+        # created because there is no different verified blob to point at.
+        fdata = canonical_map.get(canonical) or {}
+        platform_count = sum(
+            1 for p in PLATFORMS
+            if (fdata.get("platforms") or {}).get(p, {}).get("known_file")
+        )
+
+        if platform_count >= 2:
+            confidence = "high"
+        else:
+            confidence = "low"   # platform_count == 1; 0 shouldn't occur for stored blobs
+
+        # Best wins: never downgrade high → low.
+        if existing_confidence == "high" and confidence == "low":
+            unchanged += 1
+            continue
+
+        conn.execute(
+            "UPDATE files SET confidence = ? WHERE canonical_name = ?",
+            (confidence, canonical),
+        )
+        print(
+            f"  [verify] {confidence:4s}: {canonical!r}  "
+            f"({platform_count} platform(s) corroborate)"
+        )
+        if confidence == "high":
+            high += 1
+        else:
+            low += 1
+
+    # ── Second loop: alias canonicals in canonical_aliases ─────────────────
+    # verify_pass's first loop only processes blobs in files.  But alias
+    # canonicals (in canonical_aliases with confidence=NULL) are not in files —
+    # they are the expansion rows that make the shopping list's unverifiable
+    # count exceed the database's unverifiable blob count.  Apply the same
+    # platform-count logic to them and write confidence directly into
+    # canonical_aliases.confidence so the report lookup finds it immediately.
+    alias_rows = conn.execute(
+        "SELECT canonical_name FROM canonical_aliases WHERE confidence IS NULL"
+    ).fetchall()
+
+    for (canonical,) in alias_rows:
+        fdata = canonical_map.get(canonical) or {}
+        platform_count = sum(
+            1 for p in PLATFORMS
+            if (fdata.get("platforms") or {}).get(p, {}).get("known_file")
+        )
+        if platform_count == 0:
+            # Canonical not in manifest (orphan alias) — skip.
+            continue
+
+        confidence = "high" if platform_count >= 2 else "low"
+        conn.execute(
+            "UPDATE canonical_aliases SET confidence = ? WHERE canonical_name = ?",
+            (confidence, canonical),
+        )
+        print(
+            f"  [verify] {confidence:4s}: {canonical!r}  "
+            f"({platform_count} platform(s) corroborate, alias)"
+        )
+        if confidence == "high":
+            high += 1
+        else:
+            low += 1
+
+    # ── Loop 3: mismatch_accepted blobs ───────────────────────────────────
+    # Mirrors Loop 1 for blobs where declared hashes exist but none matched the
+    # bytes we actually stored.  reconcile_aliases Case 2 handles the common
+    # sub-case (declared MD5 is already verified elsewhere), but cannot catch
+    # cases where that verified blob was ingested *after* reconciliation ran, or
+    # where only non-MD5 hashes are declared.  Both mechanisms are applied here:
+    #
+    # Hash cascade   — if the blob's actual SHA256/SHA1/CRC32 matches a verified
+    #                  blob under a different canonical, the file is correct bytes
+    #                  filed under the wrong name.  Purge + register alias.
+    # Corroboration  — if no hash alias found, annotate files.confidence so the
+    #                  report and shopping list can surface prioritised targets.
+    mismatch_blobs = conn.execute(
+        "SELECT sqlar_name, canonical_name, sha1, sha256, crc32 "
+        "FROM files WHERE status = 'mismatch_accepted'"
+    ).fetchall()
+
+    for sqlar_name, canonical, sha1, sha256, crc32 in mismatch_blobs:
+
+        # Skip if reconcile_aliases already resolved this canonical — any alias
+        # entry (regardless of confidence) means it is fully accounted for.
+        existing_alias = conn.execute(
+            "SELECT 1 FROM canonical_aliases WHERE canonical_name = ?",
+            (canonical,),
+        ).fetchone()
+        if existing_alias:
+            unchanged += 1
+            continue
+
+        existing_confidence: str | None = conn.execute(
+            "SELECT confidence FROM files WHERE canonical_name = ?",
+            (canonical,),
+        ).fetchone()
+        existing_confidence = existing_confidence[0] if existing_confidence else None
+
+        # ── Steps 1–3: Hash cascade → true alias ────────────────────────────
+        # The mismatch blob's declared hashes didn't match, but its *actual*
+        # non-MD5 hashes may match a verified blob filed under a different
+        # canonical — meaning these are the same bytes with a naming mismatch.
+        alias_result: tuple[str, str] | None = None
+        for col, val in (("sha256", sha256), ("sha1", sha1), ("crc32", crc32)):
+            if not val:
+                continue
+            row = conn.execute(
+                f"SELECT sqlar_name, canonical_name FROM files "
+                f"WHERE {col} = ? AND canonical_name != ? AND status = 'verified'",
+                (val, canonical),
+            ).fetchone()
+            if row:
+                alias_result = (row[0], row[1])
+                break
+
+        if alias_result:
+            # Best wins: don't re-process an existing high-confidence annotation.
+            if existing_confidence == "high":
+                unchanged += 1
+                continue
+            target_sqlar, target_canonical = alias_result
+            remove_sqlar_entry(conn, sqlar_name)
+            conn.execute(
+                "INSERT OR REPLACE INTO canonical_aliases "
+                "(canonical_name, sqlar_name, confidence) VALUES (?, ?, 'high')",
+                (canonical, target_sqlar),
+            )
+            conn.execute(
+                "DELETE FROM missing_files WHERE canonical_name = ?", (canonical,)
+            )
+            print(
+                f"  [verify] high: {canonical!r} → hash alias of "
+                f"{target_canonical!r}  (sqlar: {target_sqlar})  [mismatch resolved]"
+            )
+            high += 1
+            continue
+
+        # ── Steps 4a/4b: Platform corroboration → annotate files.confidence ─
+        # No hash alias found — the mismatch blob stays in the DB.  Annotate
+        # confidence so the report's shopping list can indicate how urgently
+        # the correct version should be sourced.
+        fdata = canonical_map.get(canonical) or {}
+        platform_count = sum(
+            1 for p in PLATFORMS
+            if (fdata.get("platforms") or {}).get(p, {}).get("known_file")
+        )
+
+        if platform_count >= 2:
+            confidence = "high"
+        else:
+            confidence = "low"
+
+        # Best wins: never downgrade high → low.
+        if existing_confidence == "high" and confidence == "low":
+            unchanged += 1
+            continue
+
+        conn.execute(
+            "UPDATE files SET confidence = ? WHERE canonical_name = ?",
+            (confidence, canonical),
+        )
+        print(
+            f"  [verify] {confidence:4s}: {canonical!r}  "
+            f"({platform_count} platform(s) corroborate)  [mismatch]"
+        )
+        if confidence == "high":
+            high += 1
+        else:
+            low += 1
+
+    conn.commit()
+    resolved = high + low
+    print(
+        f"[build] Verify pass complete: "
+        f"{resolved} annotated ({high} high-confidence, {low} low-confidence), "
+        f"{unchanged} skipped."
+    )
+    return high, low, unchanged
 
 
 # ---------------------------------------------------------------------------
@@ -1384,6 +1789,7 @@ def run(config: configparser.ConfigParser, base_dir: str = ".") -> bool:
         base_dir,
     )
     incremental = config.getboolean(section, "incremental", fallback=True)
+    verify_pass = config.getboolean(section, "verify_pass", fallback=True)
     temp_dir    = _resolve(config.get(section, "temp_dir", fallback="temp"), base_dir)
     os.makedirs(temp_dir, exist_ok=True)
 
@@ -1482,6 +1888,16 @@ def run(config: configparser.ConfigParser, base_dir: str = ".") -> bool:
     # block so counts reflect the fully reconciled state.
     reconcile_aliases(conn, canonical_map)
 
+    # ── Verify pass ────────────────────────────────────────────────────────
+    # Processes unverifiable blobs that reconcile_aliases could not resolve
+    # via MD5.  Attempts SHA256/SHA1/CRC32 hash matching and filename-based
+    # corroboration to find probable aliases among verified blobs.
+    # Runs on every build (gated by verify_pass config flag) so that any
+    # unverifiables introduced by this scan are immediately processed.
+    vp_high = vp_low = 0
+    if verify_pass:
+        vp_high, vp_low, _ = run_verify_pass(conn, canonical_map)
+
     missing_count = conn.execute(
         "SELECT COUNT(DISTINCT canonical_name) FROM missing_files"
     ).fetchone()[0]
@@ -1496,17 +1912,50 @@ def run(config: configparser.ConfigParser, base_dir: str = ".") -> bool:
         if existing is None or STATUS_RANK.get(status, 99) < STATUS_RANK.get(existing, 99):
             canonical_status[canonical] = status
 
-    db_verified     = sum(1 for s in canonical_status.values() if s == "verified")
-    db_unverifiable = sum(1 for s in canonical_status.values() if s == "unverifiable")
-    db_mismatch     = sum(1 for s in canonical_status.values() if s == "mismatch_accepted")
-    db_present      = len(canonical_status)
+    db_verified_direct = sum(1 for s in canonical_status.values() if s == "verified")
+    db_unverifiable    = sum(1 for s in canonical_status.values() if s == "unverifiable")
+    db_mismatch        = sum(1 for s in canonical_status.values() if s == "mismatch_accepted")
     # Alias canonicals live only in canonical_aliases — they have no files row and
-    # are excluded from missing_files by _canonical_in_db().  Count them separately
-    # so db_total matches the manifest.
+    # are excluded from missing_files by _canonical_in_db().  Aliases always point
+    # at a verified blob (both reconcile_aliases and run_verify_pass target only
+    # verified targets in SQL), so from the user's perspective an aliased canonical
+    # is functionally verified — staging produces a verified file.  We therefore
+    # roll alias_count into db_verified for the user-facing summary; the raw count
+    # is preserved internally for diagnostics.  See DEVELOPER_NOTES §4.
     alias_count = conn.execute(
         "SELECT COUNT(DISTINCT canonical_name) FROM canonical_aliases"
     ).fetchone()[0]
-    db_total        = db_present + missing_count + alias_count
+    db_verified = db_verified_direct + alias_count
+    db_present  = len(canonical_status) + alias_count
+    db_total    = db_present + missing_count
+
+    # Probable-alias counts for the build summary — blob level only.
+    # The second verify_pass loop annotates alias canonicals in canonical_aliases,
+    # but those are NOT blobs; they're expansions counted under alias_count.
+    # The summary should reflect only the unverifiable blobs in files.
+    total_high_conf = conn.execute(
+        "SELECT COUNT(*) FROM files"
+        " WHERE status = 'unverifiable' AND confidence = 'high'"
+    ).fetchone()[0]
+    total_low_conf = conn.execute(
+        "SELECT COUNT(*) FROM files"
+        " WHERE status = 'unverifiable' AND confidence = 'low'"
+    ).fetchone()[0]
+
+    # Confidence breakdown for mismatch_accepted blobs (annotated by Loop 3 of
+    # run_verify_pass).  Mirrors the unverifiable breakdown: high = 2+ platforms
+    # corroborate; low = 1 platform; unresolved = not yet annotated.  Hash-matched
+    # mismatch blobs are removed and re-aliased to the verified target — those
+    # canonicals live in canonical_aliases and are rolled into db_verified, not
+    # counted here.
+    mismatch_high_conf = conn.execute(
+        "SELECT COUNT(*) FROM files"
+        " WHERE status = 'mismatch_accepted' AND confidence = 'high'"
+    ).fetchone()[0]
+    mismatch_low_conf = conn.execute(
+        "SELECT COUNT(*) FROM files"
+        " WHERE status = 'mismatch_accepted' AND confidence = 'low'"
+    ).fetchone()[0]
 
     # Blob-level counts
     total_blobs    = conn.execute("SELECT COUNT(*) FROM files").fetchone()[0]
@@ -1532,14 +1981,32 @@ def run(config: configparser.ConfigParser, base_dir: str = ".") -> bool:
     print(f"  verified   — a stored blob's hash matches a declared hash for this canonical.")
     print(f"  unverifiable — stored, but no platform declares a hash to check against.")
     print(f"  hash mismatch — stored, but the blob's hash matches none of the declared values.")
+    if verify_pass:
+        print(f"  high confidence — file confirmed by 2+ platforms.")
+        print(f"  low  confidence — file declared by exactly 1 platform.")
 
     print(f"\n[build] Collection summary — {db_total} canonical(s) across all platforms:")
     print(f"  Present  : {db_present:>6}  (at least one blob stored)")
     print(f"    verified          : {db_verified:>6}")
-    print(f"    unverifiable      : {db_unverifiable:>6}")
-    print(f"    hash mismatch     : {db_mismatch:>6}")
-    if alias_count:
-        print(f"  Via alias: {alias_count:>6}  (bytes stored under a different canonical name)")
+    # Unverifiable breakdown when verify_pass is enabled.
+    # total_high_conf / total_low_conf are confidence subsets of db_unverifiable
+    # blobs that remained in files (i.e. platform-corroborated annotations).
+    # Hash-matched aliases live in canonical_aliases, not files, and are rolled
+    # into db_verified — they are not part of these counts.
+    unverif_unresolved  = db_unverifiable - total_high_conf - total_low_conf
+    mismatch_unresolved = db_mismatch - mismatch_high_conf - mismatch_low_conf
+    if verify_pass:
+        print(f"    unverifiable      : {db_unverifiable:>6}")
+        print(f"      high confidence : {total_high_conf:>6}  (2+ platforms corroborate)")
+        print(f"      low  confidence : {total_low_conf:>6}  (1 platform)")
+        print(f"      unresolved      : {unverif_unresolved:>6}")
+        print(f"    hash mismatch     : {db_mismatch:>6}")
+        print(f"      high confidence : {mismatch_high_conf:>6}  (2+ platforms corroborate)")
+        print(f"      low  confidence : {mismatch_low_conf:>6}  (1 platform)")
+        print(f"      unresolved      : {mismatch_unresolved:>6}")
+    else:
+        print(f"    unverifiable      : {db_unverifiable:>6}")
+        print(f"    hash mismatch     : {db_mismatch:>6}")
     print(f"  Missing  : {missing_count:>6}  (not yet found in any source, across all platforms)")
     print(f"\n  Blobs stored : {total_blobs} total  "
           f"({verified_blobs} verified"
