@@ -42,11 +42,17 @@ CREATE TABLE files (
     md5             TEXT,
     sha256          TEXT,
     crc32           TEXT,
-    size            INTEGER
+    size            INTEGER,
+    confidence      TEXT               -- NULL | 'high' | 'low' — set by verify pass on unverifiable and mismatch_accepted blobs
 );
 ```
 
 A canonical may have multiple rows in `files` (one per verified regional variant). The `sqlar_name` primary key is always an MD5-based filename — two variants with different MD5s coexist naturally.
+
+`confidence` is meaningful when `status` is `'unverifiable'` or `'mismatch_accepted'`. It is populated by `run_verify_pass()` during the build's third pass:
+- `'high'` — 2+ platforms declare this canonical, or its non-MD5 hashes match a verified blob stored under a different canonical name.
+- `'low'` — exactly 1 platform declares this canonical.
+- `NULL` — verify pass is disabled, or the blob was not reached (should not occur in normal operation).
 
 ### `missing_files` — canonicals not yet found
 
@@ -56,7 +62,15 @@ CREATE TABLE missing_files (
 );
 ```
 
-Populated at the end of each build run for canonicals present in the manifest but absent from `files`. Cleared and repopulated on every build. Alias canonicals are excluded by `_canonical_in_db()` — they are not in `files` but their bytes are present, so they are not missing. As a consequence, alias canonicals appear in neither `files` nor `missing_files`, and `db_total = db_present + missing_count` would undercount them. `alias_count` (from `COUNT(DISTINCT canonical_name) FROM canonical_aliases`) is added to `db_total` and reported as a `via alias` line in the build summary.
+Populated at the end of each build run for canonicals present in the manifest but absent from `files`. Cleared and repopulated on every build. Alias canonicals are excluded by `_canonical_in_db()` — they are not in `files` but their bytes are present, so they are not missing. As a consequence, alias canonicals appear in neither `files` nor `missing_files`, and a naive `db_total = len(files_canonicals) + missing_count` would undercount them.
+
+**Alias accounting in the build summary.** `alias_count` (from `COUNT(DISTINCT canonical_name) FROM canonical_aliases`) is computed at summary time and **rolled into `db_verified`** rather than reported as its own line. Justification:
+
+- Aliases always point at a verified blob. Both `reconcile_aliases()` (MD5-based) and `run_verify_pass()` hash cascade (SHA256/SHA1/CRC32) restrict their target SQL to `status = 'verified'`. There is no code path that creates an alias to an unverifiable or mismatch_accepted blob.
+- From the user's perspective, staging an aliased canonical produces a verified file — functionally indistinguishable from a directly-verified canonical.
+- A separate `Via alias:` line in the summary surfaced an internal storage detail (deduplication) that had no actionable meaning for the user. It was tossed in favour of the simpler accounting.
+
+The raw `alias_count` is still computed and available for diagnostics; it is just not printed. If a future need arises to surface the deduplication count, restore the print statement after the `Missing` line in `run()` in `bios_build.py`. The variable naming pattern preserved for that purpose: `db_verified_direct` (files only) vs. `db_verified` (direct + aliases).
 
 `_canonical_in_db()` returns `True` when a canonical's content is already present — either directly in `files` or via a matching hash — preventing it from being added to `missing_files`. Alias registration for canonicals not encountered during scanning is handled by `reconcile_aliases()`, which runs after `populate_missing_files` (see Note 17). Alias canonicals with no declared hashes (unverifiable) are covered by `bios_restore.py`'s `.aliases.json` sidecar handling on restore.
 
@@ -64,13 +78,15 @@ Populated at the end of each build run for canonicals present in the manifest bu
 
 ```sql
 CREATE TABLE canonical_aliases (
-    canonical_name  TEXT NOT NULL,
+    canonical_name  TEXT PRIMARY KEY,
     sqlar_name      TEXT NOT NULL,
-    PRIMARY KEY (canonical_name, sqlar_name)
+    confidence      TEXT            -- NULL = MD5-based (certain); 'high' | 'low' = verify pass
 );
 ```
 
 Populated when `_store()` detects that the same blob (same MD5) is already stored under a different `canonical_name`. The incoming canonical is recorded here so report lookups can resolve it without creating a duplicate `files` row.
+
+The `confidence` column is set by `run_verify_pass()` via its second loop, which processes alias canonicals that have no direct `files` row. The same high/low logic applies: 2+ platform declarations → `'high'`, 1 platform → `'low'`. Entries registered by `reconcile_aliases()` (MD5-based, always certain) retain `confidence = NULL`. The report's shopping list confidence lookup reads this column first, so alias canonicals surface their confidence correctly without any additional traversal.
 
 ### `meta` — build metadata
 
@@ -398,7 +414,27 @@ filename to an unverifiable canonical before the hash-based lookup could match
 it to the correct verified canonical. If found, the stale unverifiable blob is
 removed and the canonical is registered as an alias.
 
-All three cases print a verbose line per resolution and emit a summary count
+**Case 4 — verified canonical with per-platform mismatch.**
+A canonical may be globally `verified` (one platform's accepted version is
+stored) but mismatched from another platform's perspective because that
+platform declares a different expected MD5. If the alternate expected MD5 is
+already stored as `verified` under a different `canonical_name`, an additional
+`canonical_aliases` row is inserted mapping the canonical to that alternate
+blob. Unlike Cases 1–3 no blob is removed — both variants are valid and
+coexist. Multiple alias entries per canonical are permitted by the composite
+`(canonical_name, sqlar_name)` primary key. The per-platform report then finds
+the correct blob via `_get_file_rows()`'s alias expansion (see Note 19).
+
+The Case 4 loop uses a Python-side `registered_this_run: set[tuple[str, str]]`
+to prevent duplicate output and double-counting within a single build run.
+The SQL `INSERT OR IGNORE` prevents database duplicates, but Python's sqlite3
+implicit transaction model does not guarantee that a `SELECT` sees a pending
+`INSERT` from earlier in the same loop iteration, so a canonical with many
+verified blobs (e.g. `tos.img` with ~40 regional variants) would otherwise
+print and count the same alias repeatedly. The set is checked before the SQL
+query and populated after every new insertion.
+
+All four cases print a verbose line per resolution and emit a summary count
 (`N alias(es) registered, N stale blob(s) removed`) at the end. If nothing
 requires resolution the pass reports cleanly with zero counts.
 
@@ -431,4 +467,69 @@ does not exist, so the canonical ends up unresolved after restore.
 
 Every caller that deletes a blob — `_cleanup_superseded()`, the
 reconciliation pass Cases 2 and 3, and `audit_sqlar()` — goes through
-`remove_sqlar_entry()`, so no partial deletion path exists.
+`remove_sqlar_entry()`, so no partial deletion path exists. Case 4 does not
+delete any blobs and therefore does not call `remove_sqlar_entry()`.
+
+### 19. `_get_file_rows()` alias expansion for multi-variant canonicals
+
+`_get_file_rows()` in `bios_report.py` resolves a canonical to its stored
+blob(s) via a four-step fallback chain: direct `files` lookup, hash-based
+fallback, `database_filename` fallback, and `canonical_aliases` fallback.
+
+The original implementation guarded the `canonical_aliases` step with
+`if not rows:`, meaning aliases were only consulted when all previous steps
+returned nothing. This worked correctly for Cases 1–3 aliases (where the
+canonical has no direct `files` entry), but silently skipped Case 4 aliases:
+a canonical with a direct `files` entry (one platform's verified blob) also
+registered in `canonical_aliases` (an alternate platform's blob) would never
+expose the alternate blob to per-platform status evaluation.
+
+The fix adds an unconditional second alias pass after the fallback chain that
+appends any alias blobs whose MD5 is not already present in the collected
+rows. This means a multi-variant canonical returns all its variants in a single
+call, and `_sl_status_for_platform()` can pick the one that satisfies each
+platform's declared hashes independently.
+
+A related fix was also required in the shopping list accumulation loop. The
+original code called `_get_file_row()` (singular, best-variant-only) to
+determine per-platform status. This meant only the globally-best blob was
+evaluated against each platform's expected hashes, and a canonical whose
+best blob satisfied Platform A but not Platform B would still appear as
+`hash_mismatch` for Platform B even when a Case 4 alias blob satisfied it.
+The fix iterates over all variants returned by `_get_file_rows()` and marks
+the canonical as verified for a platform if ANY variant satisfies that
+platform's declared hashes.
+
+### 20. `run_verify_pass()` — confidence annotation for unverifiable and mismatch_accepted blobs
+
+Runs as the third build pass, immediately after `reconcile_aliases()` and before `populate_missing_files()`. Controlled by the `verify_pass` config key (default `true`).
+
+**Three populations are processed:**
+
+**Loop 1 — blobs in `files` with `status = 'unverifiable'`**
+
+For each unverifiable blob, the pass runs a cascade:
+
+- Steps 1–3 (hash cascade): queries `files` for a *verified* blob sharing the same SHA256, SHA1, or CRC32. If found, the two blobs are identical bytes stored under different canonical names. The unverifiable blob is removed via `remove_sqlar_entry()` and the canonical is registered in `canonical_aliases` with `confidence = 'high'`. In practice, `reconcile_aliases` Case 3 already handles the equivalent MD5 check, so steps 1–3 act as a belt-and-suspenders guard; they will find nothing in a fully-reconciled database.
+
+- Steps 4a/4b (platform corroboration): counts how many platforms in the manifest declare the canonical. If 2 or more → `UPDATE files SET confidence = 'high'`. If exactly 1 → `UPDATE files SET confidence = 'low'`. The blob is not moved; only `files.confidence` is annotated. This is the productive path for the vast majority of unverifiable blobs.
+
+**Loop 2 — alias canonicals in `canonical_aliases` with `confidence IS NULL`**
+
+Alias canonicals have no direct `files` row — they cannot be reached by Loop 1. Loop 2 applies the same platform-count logic to these entries and writes confidence directly into `canonical_aliases.confidence`. This matters because the shopping list expands alias canonicals as their own rows; without Loop 2, those rows would show blank confidence.
+
+**Loop 3 — blobs in `files` with `status = 'mismatch_accepted'`**
+
+Mirrors Loop 1 for blobs where declared hashes exist but none matched the stored bytes. `reconcile_aliases` Case 2 handles the common sub-case (a declared MD5 is already verified elsewhere), so Loop 3 only processes surviving mismatch blobs that Case 2 left in place — typically because the target verified blob was ingested *after* reconciliation ran, or because only non-MD5 hashes are declared.
+
+- Steps 1–3 (hash cascade): same SHA256/SHA1/CRC32 query against verified blobs under different canonicals. If a match is found, the mismatch blob's actual bytes are correct — the file was simply filed under the wrong canonical name. The mismatch blob is removed and the canonical is registered in `canonical_aliases` with `confidence = 'high'`. The print line includes `[mismatch resolved]` to distinguish these from unverifiable hash-cascade resolutions.
+
+- Steps 4a/4b (platform corroboration): if no hash alias is found, annotates `files.confidence` with the same high/low logic as Loop 1. The mismatch blob stays in `files`; only its `confidence` column is updated so the report and shopping list can prioritise which wrong-version files are most worth replacing.
+
+Loop 3 skips any canonical that already has an entry in `canonical_aliases` (regardless of confidence) — such canonicals were fully resolved by `reconcile_aliases` Case 2 and do not need reprocessing.
+
+**"Best wins" rule**: an existing `'high'` annotation is never replaced by `'low'`. Existing `NULL`-confidence aliases (registered by `reconcile_aliases` via MD5, effectively certain) are skipped entirely in both Loop 1 and Loop 3.
+
+**Schema notes**: `files.confidence` and `canonical_aliases.confidence` are added by `_migrate_db()` on first run against an older database. Older databases that have never had `run_verify_pass()` run will have `NULL` for all confidence values; the next build populates them automatically.
+
+**Report interaction**: `bios_report.py` reads `canonical_aliases.confidence` first when building the shopping list confidence lookup, then falls back to `files.confidence`. The `no_md5` bucket (unverifiable entries that reach the shopping list) uses `canonical_confidence or 'unresolved'` to ensure the `Confidence` column is never blank — genuinely unannotated entries show `'unresolved'` rather than an empty cell. Hash mismatch entries receive their confidence from `bios_report.py` at report-generation time (derived from platform count, not stored in the DB), so the `Confidence` column is always populated for `hash_mismatch` rows in the shopping list.
