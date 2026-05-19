@@ -200,9 +200,10 @@ CREATE TABLE IF NOT EXISTS meta (
 --                      filename corroboration
 --             'low'  = verify_pass single-platform filename match
 CREATE TABLE IF NOT EXISTS canonical_aliases (
-    canonical_name  TEXT PRIMARY KEY,
+    canonical_name  TEXT NOT NULL,
     sqlar_name      TEXT NOT NULL,
-    confidence      TEXT
+    confidence      TEXT,
+    PRIMARY KEY (canonical_name, sqlar_name)
 );
 
 CREATE INDEX IF NOT EXISTS idx_files_canonical  ON files (canonical_name);
@@ -219,6 +220,29 @@ def _migrate_db(conn: sqlite3.Connection) -> None:
     files_cols = {row[1] for row in conn.execute("PRAGMA table_info(files)")}
     if "confidence" not in files_cols:
         conn.execute("ALTER TABLE files ADD COLUMN confidence TEXT")
+
+    # Migrate canonical_aliases from single-column PK (canonical_name) to
+    # composite (canonical_name, sqlar_name).  SQLite cannot alter a primary
+    # key in place, so we rebuild the table when the old shape is detected.
+    # Required for reconcile_aliases() Case 4 to register multiple alternate
+    # variants per canonical — without this, only the first INSERT OR IGNORE
+    # for a given canonical_name persists and the rest are silently dropped.
+    pk_cols = [r[1] for r in conn.execute("PRAGMA table_info(canonical_aliases)") if r[5] > 0]
+    if pk_cols == ["canonical_name"]:
+        print("[migrate] Upgrading canonical_aliases to composite PK …")
+        conn.executescript("""
+            CREATE TABLE canonical_aliases_new (
+                canonical_name TEXT NOT NULL,
+                sqlar_name     TEXT NOT NULL,
+                confidence     TEXT,
+                PRIMARY KEY (canonical_name, sqlar_name)
+            );
+            INSERT INTO canonical_aliases_new (canonical_name, sqlar_name, confidence)
+                SELECT canonical_name, sqlar_name, confidence FROM canonical_aliases;
+            DROP TABLE canonical_aliases;
+            ALTER TABLE canonical_aliases_new RENAME TO canonical_aliases;
+            CREATE INDEX IF NOT EXISTS idx_aliases_sqlar ON canonical_aliases (sqlar_name);
+        """)
 
     conn.commit()
 
@@ -387,29 +411,76 @@ def _purge_orphans(conn: sqlite3.Connection, canonical_map: dict) -> int:
     current manifest.  Also removes stale canonical_aliases entries.
     This runs on every build so orphaned blobs can never accumulate silently
     (e.g. after a manifest regeneration that removed files).
-    Returns the number of entries removed.
+
+    Ownership transfer: before deleting a blob whose canonical was dropped from
+    the manifest, check whether any canonical_aliases entry pointing at that
+    blob names a canonical that IS still in the manifest.  If so, transfer
+    ownership of the blob to that alias canonical rather than purging — the
+    bytes are still claimed by a valid name, the alias was just bookkeeping
+    redundancy now that the original canonical is gone.
+
+    Returns the number of entries removed (transferred entries are not counted
+    as removed; they're reported separately).
     """
     rows = conn.execute("SELECT sqlar_name, canonical_name FROM files").fetchall()
-    removed = 0
+    removed     = 0
+    transferred = 0
     for sqlar_name, canonical in rows:
-        if canonical not in canonical_map:
-            print(f"  [purge] Removing orphan {canonical!r} (not in manifest)")
-            remove_sqlar_entry(conn, sqlar_name)
-            removed += 1
+        if canonical in canonical_map:
+            continue
 
-    # Purge stale alias entries whose canonical is no longer in the manifest
-    alias_rows = conn.execute(
-        "SELECT canonical_name FROM canonical_aliases"
-    ).fetchall()
-    for (canonical,) in alias_rows:
-        if canonical not in canonical_map:
+        # Look for a valid alias claimant before deleting.
+        alias_claimants = conn.execute(
+            "SELECT canonical_name FROM canonical_aliases WHERE sqlar_name = ?",
+            (sqlar_name,),
+        ).fetchall()
+        new_owner: str | None = None
+        for (alias_canonical,) in alias_claimants:
+            if alias_canonical in canonical_map:
+                new_owner = alias_canonical
+                break
+
+        if new_owner is not None:
+            # Transfer: rewrite files.canonical_name, then drop the now-redundant
+            # alias entry (canonical == files.canonical_name is a self-reference).
+            # file_platforms and accepted_hashes key on sqlar_name and don't need
+            # to be touched.  Other alias entries for this blob (e.g. Case 4
+            # alternates from other valid canonicals) are preserved.
+            print(f"  [purge] Transferring orphan {canonical!r} -> {new_owner!r} "
+                  f"(blob kept; valid alias canonical claims these bytes)")
             conn.execute(
-                "DELETE FROM canonical_aliases WHERE canonical_name = ?", (canonical,)
+                "UPDATE files SET canonical_name = ? WHERE sqlar_name = ?",
+                (new_owner, sqlar_name),
             )
-            removed += 1
+            conn.execute(
+                "DELETE FROM canonical_aliases "
+                "WHERE canonical_name = ? AND sqlar_name = ?",
+                (new_owner, sqlar_name),
+            )
+            transferred += 1
+            continue
 
-    if removed:
+        print(f"  [purge] Removing orphan {canonical!r} (not in manifest)")
+        remove_sqlar_entry(conn, sqlar_name)
+        removed += 1
+
+    # Purge stale alias entries whose canonical is no longer in the manifest.
+    # Dedupe the iteration: the composite (canonical_name, sqlar_name) PK lets
+    # a canonical have many rows, but one DELETE clears them all at once.
+    stale_aliases = {
+        row[0] for row in conn.execute("SELECT canonical_name FROM canonical_aliases")
+        if row[0] not in canonical_map
+    }
+    for canonical in stale_aliases:
+        conn.execute(
+            "DELETE FROM canonical_aliases WHERE canonical_name = ?", (canonical,)
+        )
+        removed += 1
+
+    if removed or transferred:
         conn.commit()
+    if transferred:
+        print(f"  [purge] {transferred} blob(s) transferred to valid alias canonicals.")
     return removed
 
 
@@ -434,12 +505,24 @@ def audit_sqlar(conn: sqlite3.Connection, canonical_map: dict) -> None:
             "SELECT status FROM files WHERE sqlar_name = ?", (sqlar_name,)
         ).fetchone()[0]
 
-        if STATUS_RANK.get(new_status, 99) < STATUS_RANK.get(old_status, 99):
+        # Audit fires on ANY status change, including demotions.  This is the
+        # exception to the 'status only ever upgrades' rule that applies in the
+        # live scan paths (where demotion would let bad data overwrite good).
+        # The manifest is authoritative; if a previously-verified blob no
+        # longer matches any declared hash, reflecting that is more important
+        # than preserving the old verdict.  _cleanup_superseded below restores
+        # the per-canonical invariant if demotion produced duplicates.
+        if new_status != old_status:
             conn.execute(
                 "UPDATE files SET status = ? WHERE sqlar_name = ?",
                 (new_status, sqlar_name),
             )
-            print(f"    Upgraded {canonical!r}: {old_status} → {new_status}")
+            direction = (
+                "Upgraded"
+                if STATUS_RANK.get(new_status, 99) < STATUS_RANK.get(old_status, 99)
+                else "Demoted"
+            )
+            print(f"    {direction} {canonical!r}: {old_status} → {new_status}")
 
     _cleanup_superseded(conn)
     conn.commit()
@@ -447,17 +530,53 @@ def audit_sqlar(conn: sqlite3.Connection, canonical_map: dict) -> None:
 
 
 def _cleanup_superseded(conn: sqlite3.Connection) -> None:
-    rows = conn.execute(
-        "SELECT sqlar_name, canonical_name FROM files WHERE status = 'mismatch_accepted'"
+    """
+    Enforce the per-canonical invariant:
+      * multiple verified blobs may coexist (regional variants);
+      * at most ONE non-verified blob may exist;
+      * any non-verified blob is removed when a verified blob exists for the
+        same canonical.
+
+    Live scan paths in _should_store/_store maintain this invariant by
+    construction, so this function is typically a no-op on a fresh scan.
+    audit_sqlar() can produce non-verified duplicates by demoting previously
+    verified blobs on manifest change (e.g. a multi-variant canonical losing
+    verification on all of its variants).  Running this cleanup after the
+    audit restores the invariant before subsequent build steps see the data.
+    """
+    canonicals_with_nonverified = conn.execute(
+        "SELECT DISTINCT canonical_name FROM files "
+        "WHERE status IN ('unverifiable', 'mismatch_accepted')"
     ).fetchall()
-    for sqlar_name, canonical in rows:
-        verified = conn.execute(
-            "SELECT 1 FROM files WHERE canonical_name = ? AND status = 'verified'",
+
+    for (canonical,) in canonicals_with_nonverified:
+        blobs = conn.execute(
+            "SELECT sqlar_name, status FROM files WHERE canonical_name = ? "
+            "ORDER BY CASE status "
+            "  WHEN 'verified'          THEN 1 "
+            "  WHEN 'unverifiable'      THEN 2 "
+            "  WHEN 'mismatch_accepted' THEN 3 "
+            "  ELSE 4 END, sqlar_name",
             (canonical,),
-        ).fetchone()
-        if verified:
-            print(f"    Removing superseded mismatch_accepted blob for {canonical!r}")
-            remove_sqlar_entry(conn, sqlar_name)
+        ).fetchall()
+
+        has_verified = any(s == "verified" for _, s in blobs)
+        kept_non_verified = False
+
+        for sqlar_name, status in blobs:
+            if status == "verified":
+                continue
+            if has_verified:
+                # A verified sibling exists — any non-verified blob is superseded.
+                print(f"    Removing superseded {status} blob {sqlar_name!r} for {canonical!r}")
+                remove_sqlar_entry(conn, sqlar_name)
+            elif not kept_non_verified:
+                # Best non-verified blob for this canonical — keep it.
+                kept_non_verified = True
+            else:
+                # Duplicate non-verified blob — only one allowed when no verified exists.
+                print(f"    Removing duplicate {status} blob {sqlar_name!r} for {canonical!r}")
+                remove_sqlar_entry(conn, sqlar_name)
 
 
 # ---------------------------------------------------------------------------
@@ -926,6 +1045,7 @@ class Scanner:
                         remove_sqlar_entry(self.conn, old_sqlar)
             self.conn.commit()
             self.found.add(canonical)
+            print(f"  [{'alias':20s}] {canonical}  →  {sqlar_name}  (alias of {already[0]!r})")
             return
 
         # Remove superseded entries on upgrade — only when the new blob is strictly
@@ -1451,10 +1571,13 @@ def run_verify_pass(
                 break
 
         if alias_result:
-            # Best wins: don't re-process an existing high-confidence alias.
-            if existing_confidence == "high":
-                unchanged += 1
-                continue
+            # Hash-cascade dedup always runs.  The 'best wins' rule governs
+            # confidence annotation only (Steps 4a/4b below); it does NOT gate
+            # deduplication.  An existing high-confidence annotation from a
+            # prior verify pass just means this blob was platform-corroborated
+            # last time — it is not a signal that the blob was deduplicated,
+            # so skipping the cascade here would leave duplicate bytes in the
+            # database indefinitely.
             target_sqlar, target_canonical = alias_result
             remove_sqlar_entry(conn, sqlar_name)
             conn.execute(
@@ -1593,10 +1716,9 @@ def run_verify_pass(
                 break
 
         if alias_result:
-            # Best wins: don't re-process an existing high-confidence annotation.
-            if existing_confidence == "high":
-                unchanged += 1
-                continue
+            # Hash-cascade dedup always runs.  See the matching note in Loop 1
+            # for the rationale: 'best wins' applies to the confidence
+            # annotation, not to deduplication of physically duplicate bytes.
             target_sqlar, target_canonical = alias_result
             remove_sqlar_entry(conn, sqlar_name)
             conn.execute(
@@ -1980,7 +2102,10 @@ def run(config: configparser.ConfigParser, base_dir: str = ".") -> bool:
     print(f"  missing    — no blob found in any scanned source yet.")
     print(f"  verified   — a stored blob's hash matches a declared hash for this canonical.")
     print(f"  unverifiable — stored, but no platform declares a hash to check against.")
-    print(f"  hash mismatch — stored, but the blob's hash matches none of the declared values.")
+    print(f"  hash mismatch — stored, but the blob's hash matches none of the declared values")
+    print(f"                  across ALL platforms combined.  Files that match one platform but")
+    print(f"                  not another are counted as verified here; the per-platform mismatch")
+    print(f"                  detail appears in the shopping list and per-platform report CSVs.")
     if verify_pass:
         print(f"  high confidence — file confirmed by 2+ platforms.")
         print(f"  low  confidence — file declared by exactly 1 platform.")
@@ -2013,16 +2138,19 @@ def run(config: configparser.ConfigParser, base_dir: str = ".") -> bool:
           f"{f', {multi_variant} canonical(s) with multiple verified variants' if multi_variant else ''})")
 
     sl_total = missing_count + db_mismatch + db_unverifiable
-    print(f"\n  Report counts: each platform's 'PHYSICAL FILES' line uses these same")
-    print(f"  definitions. Per-platform counts cover only the files that platform declares,")
-    print(f"  so they will always be lower than the totals shown above.")
-    print(f"\n  Shopping list: roughly {sl_total} rows expected "
-          f"({missing_count} missing + {db_mismatch} mismatch + {db_unverifiable} unverifiable).")
-    print(f"  Actual row count varies:")
-    print(f"    mismatch    — expands when multiple MD5 variants are declared (one row per version).")
-    print(f"    missing     — may consolidate when multiple canonicals share an expected MD5.")
-    print(f"    unverifiable — may expand: alias canonicals whose primary blob is unverifiable")
-    print(f"                  each appear as their own row alongside the primary canonical.")
+    print(f"\n  Report counts: each platform's 'PHYSICAL FILES' line reflects that platform's")
+    print(f"  perspective.  Per-platform counts cover only the files that platform declares,")
+    print(f"  so missing/unverifiable counts will always be lower than the totals above.")
+    print(f"  hash_mismatch counts may be HIGHER per-platform than the global total above,")
+    print(f"  because files counted globally as 'verified' can still be the wrong version")
+    print(f"  for a specific platform (e.g. you have RetroBat's revision of awbios.zip but")
+    print(f"  Recalbox expects a different revision — globally verified, per-Recalbox mismatch).")
+    print(f"\n  Shopping list rows:")
+    print(f"    Global  'hash mismatch' count above  : {db_mismatch:>4}  (no platform anywhere recognizes the file)")
+    print(f"    Shopping list hash_mismatch rows will : {db_mismatch:>4}+ (expands for per-platform version mismatches")
+    print(f"                                                 and multiple MD5 variants per canonical)")
+    print(f"    unverifiable rows                     : {db_unverifiable:>4}+ (may expand for alias canonicals)")
+    print(f"    missing rows                          : {missing_count:>4}  (may consolidate when canonicals share an MD5)")
     print(f"  If the shopping list appears empty or stale, re-run Build then Report.")
 
     # ── Write build output files (research manifest stays untouched) ───────
