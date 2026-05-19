@@ -59,6 +59,7 @@ def _datestamp() -> str:
 PLATFORMS = [
     "retrodeck", "retropie", "batocera", "emudeck",
     "recalbox", "retrobat", "lakka", "retroarch",
+    "romm", "bizhawk",
 ]
 
 
