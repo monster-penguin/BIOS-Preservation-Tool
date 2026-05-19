@@ -133,28 +133,57 @@ def _best_sqlar_name(
     2. Any verified variant (first found) — used when platform declares no MD5
        or no declared MD5 matches a stored variant
     3. Best non-verified variant (unverifiable, then mismatch_accepted)
+
+    Both `files` and `canonical_aliases` are consulted at every step.  An
+    alias-only canonical (no direct files row) still produces a real blob, and
+    a Case 4 multi-variant canonical that has its platform-correct variant
+    stored under another canonical name returns that variant rather than the
+    direct row's variant.
     """
-    # Try to find a verified variant matching a platform-declared MD5
+    # Priority 1: verified variant matching a platform-declared MD5.
+    # Consult direct files first, then canonical_aliases.  The right variant
+    # for this platform may live under another canonical and be registered as
+    # a Case 4 alias of this one — staging must reach it or the user gets a
+    # verified-looking file with the wrong MD5 for their platform.
     if declared_md5s:
         for md5 in declared_md5s:
+            md5_l = md5.lower()
             row = conn.execute(
                 "SELECT sqlar_name, status FROM files "
                 "WHERE canonical_name = ? AND md5 = ? AND status = 'verified'",
-                (canonical, md5.lower()),
+                (canonical, md5_l),
+            ).fetchone()
+            if row:
+                return row[0], row[1]
+            row = conn.execute(
+                "SELECT f.sqlar_name, f.status "
+                "FROM canonical_aliases ca "
+                "JOIN files f ON f.sqlar_name = ca.sqlar_name "
+                "WHERE ca.canonical_name = ? AND f.md5 = ? AND f.status = 'verified'",
+                (canonical, md5_l),
             ).fetchone()
             if row:
                 return row[0], row[1]
 
-    # Fall back to best available by status rank
+    # Priority 2/3: best available by status rank.  UNION the direct files
+    # rows with the alias-joined files rows so an alias-only canonical (no
+    # direct row at all) still resolves to a blob.  Without this an aliased
+    # canonical falsely reports as missing even though its bytes are in the
+    # database — the README promises staging produces a verified file for it.
     row = conn.execute(
-        "SELECT sqlar_name, status FROM files "
-        "WHERE canonical_name = ? "
+        "SELECT sqlar_name, status FROM ("
+        "  SELECT sqlar_name, status FROM files WHERE canonical_name = ? "
+        "  UNION "
+        "  SELECT f.sqlar_name, f.status FROM canonical_aliases ca "
+        "    JOIN files f ON f.sqlar_name = ca.sqlar_name "
+        "    WHERE ca.canonical_name = ? "
+        ") "
         "ORDER BY CASE status "
         "  WHEN 'verified'          THEN 1 "
         "  WHEN 'unverifiable'      THEN 2 "
         "  WHEN 'mismatch_accepted' THEN 3 "
         "  ELSE 4 END LIMIT 1",
-        (canonical,),
+        (canonical, canonical),
     ).fetchone()
     return (row[0], row[1]) if row else (None, None)
 
