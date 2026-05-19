@@ -127,11 +127,81 @@ def _confirm_platforms(config: configparser.ConfigParser) -> list[str]:
 # Path helper
 # ---------------------------------------------------------------------------
 
+def _load_known_upstream_issues(path: str) -> dict[str, str]:
+    """
+    Load the user-maintained registry of expected MD5s known to be stale,
+    misprinted, or otherwise unmatched by any file in any public distribution.
+
+    Returns ``{md5_lowercase: note_text}``.  A missing file means no known
+    issues are configured and the report's Notes column will be blank —
+    the feature is opt-in via the file's presence.
+
+    File format: one entry per line, ``md5,note`` (comma-separated).  The
+    note may contain commas; the split is on the FIRST comma only.  Lines
+    starting with ``#`` are comments; blank lines are ignored.  Invalid
+    MD5s (wrong length or non-hex) are skipped without warning so the
+    file can carry organisational structure freely.
+    """
+    if not os.path.exists(path):
+        return {}
+    issues: dict[str, str] = {}
+    try:
+        with open(path, "r", encoding="utf-8") as fh:
+            for line in fh:
+                stripped = line.strip()
+                if not stripped or stripped.startswith("#"):
+                    continue
+                parts = stripped.split(",", 1)
+                if len(parts) != 2:
+                    continue
+                md5  = parts[0].strip().lower()
+                note = parts[1].strip()
+                if len(md5) == 32 and all(c in "0123456789abcdef" for c in md5):
+                    issues[md5] = note
+    except OSError as e:
+        print(f"[report] WARNING: could not read {path!r}: {e}")
+        return {}
+    return issues
+
+
 def _resolve(path: str, base_dir: str) -> str:
     p = Path(path)
     if not p.is_absolute():
         p = Path(base_dir) / p
     return str(p)
+
+
+def _load_known_upstream_issues(path: str) -> dict[str, str]:
+    """
+    Load a user-maintained list of expected MD5 values whose upstream manifest
+    entry is known to be stale or incorrect.  Used to annotate the Notes
+    column of shopping_hash_mismatch.csv.
+
+    File format: CSV with at least these two columns named in the header row:
+        expected_md5  — the declared hash to match against (any case; lowercased here)
+        note          — free-form text written verbatim into the Notes column
+    Other columns (e.g. `canonical`) are ignored by the loader; they exist to
+    help whoever maintains the file find entries by eye.
+
+    Missing or unreadable file -> empty dict (the feature is optional; a user
+    who hasn't curated such a list simply gets no Notes column annotations).
+    """
+    if not path or not os.path.exists(path):
+        return {}
+    out: dict[str, str] = {}
+    try:
+        # utf-8-sig strips an optional BOM that spreadsheet apps sometimes add
+        # when the user edits the file in Excel/LibreOffice and saves as CSV.
+        with open(path, "r", newline="", encoding="utf-8-sig") as fh:
+            reader = csv.DictReader(fh)
+            for row in reader:
+                md5  = (row.get("expected_md5") or "").strip().lower()
+                note = (row.get("note") or "").strip()
+                if md5 and note:
+                    out[md5] = note
+    except (OSError, csv.Error) as e:
+        print(f"[report] WARNING: could not read known-issues file {path!r}: {e}")
+    return out
 
 
 # ---------------------------------------------------------------------------
@@ -324,17 +394,38 @@ def generate_platform_report(
             best_variant = min(all_variants, key=lambda r: rank.get(r["status"], 99))
 
         # ── Physical-file counts (deduplicated by canonical name) ────────────
+        # Use THIS PLATFORM's perspective, not the global blob status.  A blob
+        # can be globally `verified` (matched some other platform's hash) while
+        # still being a mismatch from this platform's perspective.  Mirroring
+        # the shopping-list logic via _sl_status_for_platform keeps Row 1 of the
+        # CSV summary header consistent with Row 2 (entry_mismatch) and with
+        # the shopping list itself.
         if canonical not in seen_db:
-            status_val = best_variant["status"] if present else "missing"
-            seen_db[canonical] = status_val
+            if not present:
+                platform_status = "missing"
+            else:
+                declared_any = any(
+                    (pinfo.get("expected_hashes") or {}).get(ht)
+                    for ht in HASH_TYPES
+                )
+                if not declared_any:
+                    platform_status = "unverifiable"
+                else:
+                    platform_status = "hash_mismatch"
+                    for variant in all_variants:
+                        s, _ = _sl_status_for_platform(variant, pinfo)
+                        if s is None:
+                            platform_status = "verified"
+                            break
+            seen_db[canonical] = platform_status
             summary["db_total"] += 1
             if present:
                 summary["db_present"] += 1
-                if status_val == "verified":
+                if platform_status == "verified":
                     summary["db_verified"] += 1
-                elif status_val == "unverifiable":
+                elif platform_status == "unverifiable":
                     summary["db_unverifiable"] += 1
-                elif status_val == "mismatch_accepted":
+                elif platform_status == "hash_mismatch":
                     summary["db_mismatch"] += 1
             else:
                 summary["db_missing"] += 1
@@ -356,7 +447,6 @@ def generate_platform_report(
         # ── Build rows: one per staging path × one per stored variant ─────────
         # When multiple variants are stored, each gets its own row so the user
         # can see which variant matches which platform expectation.
-        any_mismatch = False
         # Determine which variants to emit: if multiple verified exist, emit all;
         # otherwise emit just the best variant (same as before).
         variants_to_emit = all_variants if len(all_variants) > 1 else (all_variants or [None])
@@ -399,13 +489,25 @@ def generate_platform_report(
                         row[f"actual {ht}"]   = actual_val
                         expected_cell = _expected_hash_cell(actual_val, declared)
                         row[f"expected {ht}"] = expected_cell
-                        if expected_cell not in ("match", "not present"):
-                            any_mismatch = True
+                        # Per-hash-type mismatch is still shown in the row for
+                        # diagnostics, but the entry_mismatch counter is driven
+                        # by _sl_status_for_platform below — the same logic the
+                        # shopping list uses — so a file that matches on MD5
+                        # but mismatches on a stale SHA1 (YAML data-quality
+                        # quirk) is not double-counted as mismatched.
 
                     rows_out.append(row)
 
-        if any_mismatch:
-            summary["entry_mismatch"] += 1
+        # entry_mismatch: count this canonical as a per-platform mismatch only
+        # when the platform declares at least one hash AND no stored variant
+        # satisfies any of those declared hashes.  Matches _sl_status_for_platform
+        # semantics so the count agrees with the shopping list.
+        if present and any((expected_hashes.get(ht) or []) for ht in HASH_TYPES):
+            if not any(
+                _sl_status_for_platform(v, pinfo)[0] is None
+                for v in variants_to_emit if v is not None
+            ):
+                summary["entry_mismatch"] += 1
 
     # ── Write CSV with summary header ───────────────────────────────────────
     Path(output_path).parent.mkdir(parents=True, exist_ok=True)
@@ -504,6 +606,15 @@ def run(config: configparser.ConfigParser, base_dir: str = ".") -> bool:
         config.get(section, "report_dir", fallback="report"),
         base_dir,
     )
+    known_issues_csv = _resolve(
+        config.get(section, "known_issues_csv",
+                   fallback="configure/known_upstream_hash_issues.csv"),
+        base_dir,
+    )
+    known_issues = _load_known_upstream_issues(known_issues_csv)
+    if known_issues:
+        print(f"[report] Loaded {len(known_issues)} known-upstream-hash-issue "
+              f"entries from {os.path.basename(known_issues_csv)}")
 
     # Which platforms to report on — confirmed interactively per run
     enabled: list[str] = _confirm_platforms(config)
@@ -741,18 +852,27 @@ def run(config: configparser.ConfigParser, base_dir: str = ".") -> bool:
             if entry["expected_md5"] != "unknown" and entry["status"] == "unverifiable":
                 entry["status"] = "hash_mismatch"
 
-        # Confidence annotation for hash_mismatch entries.
-        # Mirrors the unverifiable confidence model — instead of querying the DB,
-        # confidence is derived from how many platforms independently declared the
-        # same expected MD5 that we do not yet have:
-        #   high       — 2+ platforms agree on the target MD5 (stronger signal)
-        #   low        — only 1 platform declares it (weaker signal)
-        # Entries that already carry a confidence value (e.g. promoted from
-        # unverifiable via the sanity pass above) are left unchanged.
+        # Confidence annotation for hash_mismatch and unverifiable entries.
+        # Both follow the same platform-corroboration model, derived from the
+        # platforms accumulated in the shopping entry itself:
+        #   high       — 2+ platforms agree on the target  (stronger signal)
+        #   low        — 1 platform declares it             (weaker signal)
+        #   unresolved — 0 platforms                        (rare edge case)
+        # This unifies the model across statuses and removes a brittle
+        # dependency on verify_pass having pre-annotated files.confidence in
+        # the DB — that lookup was case-sensitive on canonical_name and could
+        # silently miss when DB rows and manifest keys differ in casing,
+        # causing every unverifiable shopping-list row to render as
+        # "unresolved" even when many platforms corroborate the file.
         for entry in shopping.values():
-            if entry["status"] == "hash_mismatch" and not entry.get("confidence"):
+            if entry["status"] in ("hash_mismatch", "unverifiable"):
                 n = len(entry.get("platforms") or [])
-                entry["confidence"] = "high" if n >= 2 else "low"
+                if n >= 2:
+                    entry["confidence"] = "high"
+                elif n == 1:
+                    entry["confidence"] = "low"
+                else:
+                    entry["confidence"] = "unresolved"
         sl_path = os.path.join(report_dir, "global_shopping_list.csv")
         with open(sl_path, "w", newline="", encoding="utf-8") as fh:
             writer = csv.writer(fh)
@@ -798,36 +918,66 @@ def run(config: configparser.ConfigParser, base_dir: str = ".") -> bool:
             f"({missing_count} missing, {mismatch_detail}, {unverif_detail})"
         )
 
-        # Write per-status subset CSVs
-        HEADERS = [
+        # Write per-status subset CSVs.
+        # hash_mismatch gets an extra Notes column populated from the
+        # user-maintained known-upstream-hash-issues file (when present).
+        # The other two CSVs are unchanged — the Notes mechanism is specific
+        # to hash_mismatch, where upstream manifest errors most often surface.
+        HEADERS               = [
             "Known Aliases", "Expected MD5", "Status",
             "Confidence", "Platforms", "Actual MD5",
         ]
+        HEADERS_HASH_MISMATCH = HEADERS + ["Notes"]
         subsets = [
-            ("missing",       "shopping_missing.csv",       missing_count),
-            ("hash_mismatch", "shopping_hash_mismatch.csv", mismatch_count),
-            ("unverifiable",  "shopping_unverifiable.csv",  unverif_count),
+            ("missing",       "shopping_missing.csv",       missing_count,  HEADERS),
+            ("hash_mismatch", "shopping_hash_mismatch.csv", mismatch_count, HEADERS_HASH_MISMATCH),
+            ("unverifiable",  "shopping_unverifiable.csv",  unverif_count,  HEADERS),
         ]
-        for status_key, filename, count in subsets:
+        annotated = 0
+        for status_key, filename, count, headers in subsets:
             subset_path = os.path.join(report_dir, filename)
             with open(subset_path, "w", newline="", encoding="utf-8") as fh:
                 writer = csv.writer(fh)
-                writer.writerow(HEADERS)
+                writer.writerow(headers)
                 for canonical, data in sorted(shopping.items()):
                     if data["status"] != status_key:
                         continue
-                    writer.writerow([
+                    row = [
                         ", ".join(sorted(data["filenames"])),
                         data["expected_md5"],
                         data["status"],
                         data.get("confidence", ""),
                         ", ".join(sorted(data["platforms"])),
                         data["actual_md5"],
-                    ])
+                    ]
+                    if status_key == "hash_mismatch":
+                        note = known_issues.get(
+                            (data["expected_md5"] or "").lower(), ""
+                        )
+                        if note:
+                            annotated += 1
+                        row.append(note)
+                    writer.writerow(row)
             print(f"  {status_key:<16} → {subset_path}  ({count} rows)")
+        if known_issues and annotated:
+            print(f"  {annotated} hash_mismatch row(s) annotated from known-issues file")
 
     conn.close()
     print("[report] Done.")
+    print(
+        f"\n  Reading the numbers:"
+        f"\n  Each platform's 'PHYSICAL FILES' line reflects that platform's perspective."
+        f"\n  Per-platform counts cover only the files that platform declares, so"
+        f"\n  missing/unverifiable counts will always be lower than the build totals."
+        f"\n  hash_mismatch counts may be HIGHER than the build's global total, because"
+        f"\n  files the build called 'verified' can still be the wrong version for a"
+        f"\n  specific platform (e.g. you have RetroBat's revision of awbios.zip but"
+        f"\n  Recalbox expects a different one — globally verified, per-Recalbox mismatch)."
+        f"\n  Shopping list rows also differ from the per-platform counts: the counts"
+        f"\n  measure distinct files, while rows measure distinct expected MD5 versions."
+        f"\n  One mismatched file with 5 declared variants produces 5 rows; the same"
+        f"\n  file mismatched across 4 platforms produces 1 shared row, not 4."
+    )
     return overall_ok
 
 
