@@ -445,7 +445,10 @@ def write_csv(manifest: dict, path: str) -> None:
                         for hv in (pdata["expected_hashes"].get(ht) or []):
                             hash_parts.append(f"{ht}:{hv}")
                     row[f"{p}_expected_hashes"] = ",".join(hash_parts) if hash_parts else "unverifiable"
-                writer.writerow(row)
+            # One row per canonical — write AFTER all platforms have populated
+            # their columns, not inside the per-platform loop (which produced
+            # 10 progressively-filled rows per canonical).
+            writer.writerow(row)
 
     print(f"  CSV  written → {path}")
 
