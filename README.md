@@ -226,17 +226,21 @@ BizHawk declares SHA1 hashes for most files rather than MD5. Files with no decla
 
 **Verified** — a stored blob's hash matches a hash declared for this canonical by at least one platform.
 
-**Unverifiable** — stored, but no platform declares any hash to check against. The file cannot be confirmed correct, but it is not missing. The verify pass (Pass 3 of Build) assigns a confidence level to every unverifiable blob:
+**Unverifiable** — stored, but no platform declares any hash to check against. The file cannot be confirmed correct, but it is not missing. Confidence in the shopping list is determined by how many platforms declare the file:
 
-- **High confidence** — 2 or more platforms declare this file, or the blob's non-MD5 hashes match a verified blob stored under a different canonical name. You almost certainly have the right file.
-- **Low confidence** — exactly 1 platform declares this file. The file is staged correctly but cannot be independently corroborated.
-- **Unresolved** — no platform corroboration was found (should not occur in normal operation).
+- **High confidence** — 2 or more platforms declare this file. You almost certainly have the right file; it just can't be hash-checked.
+- **Low confidence** — exactly 1 platform declares this file. Less corroboration.
+- **Unresolved** — no platform corroboration found (should not occur in normal operation).
 
-**Hash mismatch** — stored, but the blob's hash matches none of the declared values. You have a file, but it appears to be the wrong version. The verify pass (Pass 3 of Build) assigns a confidence level to every hash mismatch blob on the same basis as unverifiable blobs:
+The build's verify pass (Pass 3) also annotates `unverifiable` blobs in the database with high/low based on platform count, and may resolve them to verified aliases when their non-MD5 hashes match a verified blob under a different canonical name.
 
-- **High confidence** — 2 or more platforms declare this file, or the blob's non-MD5 hashes match a verified blob stored under a different canonical name. Getting the correct version should be a priority.
-- **Low confidence** — exactly 1 platform declares this file. Lower priority to resolve.
-- **Unresolved** — not yet annotated (should not occur in normal operation).
+**Hash mismatch** — stored, but the blob's hash matches none of the values declared by any platform. You have a file, but it appears to be the wrong version. Confidence in the shopping list is determined by how many platforms declare the specific expected MD5 in that row:
+
+- **High confidence** — 2 or more platforms independently declare the same target MD5. Strong signal that this is the version worth hunting for.
+- **Low confidence** — only 1 platform declares this target MD5.
+- **Unresolved** — should not occur in normal operation.
+
+Note: the build summary's `hash mismatch` count covers only blobs no platform can verify at all. Files that are verified for one platform but the wrong version for another show as `verified` in the build summary and appear as per-platform mismatch rows in the shopping list — see [Build counts vs report counts](#build-counts-vs-report-counts).
 
 > **A file's identity is its hash, not its name.** `BIOS.ROM`, `bios.rom`, and `Boot.ROM` are the same file if they share the same MD5. Filename case is always preserved exactly as declared in the source YAML.
 
@@ -293,43 +297,37 @@ Sources may be local directories, local archive files (zip, 7z, rar, tar, tar.gz
 **Build summary example:**
 
 ```
-[build] Definitions:
-  canonical  — one unique BIOS file identity across all platforms
-  blob       — one physical binary stored in the database
-  present    — at least one blob stored for this canonical
-  missing    — not found in any scanned source yet
-  verified   — blob hash matches a declared value
-  unverifiable — stored but no declared hash to check against
-  hash mismatch — stored but blob hash matches none of the declared values
-  high confidence — file confirmed by 2+ platforms
-  low  confidence — file declared by exactly 1 platform
-
-[build] Collection summary — 2198 canonical(s) across all platforms:
-  Present  :   2198  (at least one blob stored)
-    verified          :   1794
-    unverifiable      :    141
-      high confidence :     19  (2+ platforms corroborate)
-      low  confidence :    114  (1 platform)
-      unresolved      :      8
-    hash mismatch     :    231
-      high confidence :    187  (2+ platforms corroborate)
-      low  confidence :     44  (1 platform)
+[build] Collection summary — 2740 canonical(s) across all platforms:
+  Present  :   2740  (at least one blob stored)
+    verified          :   2606
+    unverifiable      :    132
+      high confidence :     16  (2+ platforms corroborate)
+      low  confidence :    116  (1 platform)
+      unresolved      :      0
+    hash mismatch     :      2
+      high confidence :      2  (2+ platforms corroborate)
+      low  confidence :      0  (1 platform)
       unresolved      :      0
   Missing  :      0  (not yet found in any source, across all platforms)
 
-  Blobs stored : 2816 total  (2084 verified, 129 canonical(s) with multiple verified variants)
+  Blobs stored : 2407 total  (2273 verified, 137 canonical(s) with multiple verified variants)
 
-  Shopping list: roughly 372 rows expected (0 missing + 231 mismatch + 141 unverifiable).
-  Actual row count varies:
-    mismatch    — expands when multiple MD5 variants are declared (one row per version).
-    missing     — may consolidate when multiple canonicals share an expected MD5.
-    unverifiable — may expand: alias canonicals whose primary blob is unverifiable
-                  each appear as their own row alongside the primary canonical.
+  Report counts: each platform's 'PHYSICAL FILES' line reflects that platform's
+  perspective.  Per-platform counts cover only the files that platform declares,
+  so missing/unverifiable counts will always be lower than the totals above.
+  hash_mismatch counts may be HIGHER per-platform than the global total above,
+  because files counted globally as 'verified' can still be the wrong version
+  for a specific platform.
+
+  Shopping list rows:
+    Global  'hash mismatch' count above  :    2  (no platform anywhere recognizes the file)
+    Shopping list hash_mismatch rows will :    2+ (expands for per-platform version mismatches
+                                                 and multiple MD5 variants per canonical)
+    unverifiable rows                     :  132+ (may expand for alias canonicals)
+    missing rows                          :    0  (may consolidate when canonicals share an MD5)
 ```
 
-The `Missing` count is global — canonicals absent from the database across all platforms combined. Per-platform counts in the Report step cover only the files that platform declares, so they will always be lower than the totals shown above.
-
-The `verified` count includes canonicals whose bytes are stored under a different canonical name (aliases — see [Core Concepts](#core-concepts) and DEVELOPER_NOTES §4). Aliases always point at a verified blob, so from a user's perspective an aliased canonical is functionally verified — staging produces a verified file.
+The `hash mismatch: 2` global count and the shopping list's hash_mismatch row count will often differ significantly. The global count is a floor — blobs no platform anywhere can verify. The shopping list also includes per-platform mismatches for globally-verified files (right bytes, wrong version for a specific platform), which can add many more rows.
 
 **Outputs** (written to `build/`):
 - `bios_database.sqlar` — the database
@@ -368,7 +366,7 @@ Each CSV has three summary lines at the top:
 # STAGING PATHS:                  total=441  present=441  missing=0  (counts reflect unique staging paths; ...)
 ```
 
-Always use the **PHYSICAL FILES** line as the authoritative measure of your collection for that platform. Manifest entry and staging path counts are informational only — their higher numbers are a consequence of one physical file satisfying many manifest entries.
+Always use the **PHYSICAL FILES** line as the authoritative measure of your collection for that platform. After scanning, Row 1 (PHYSICAL FILES) and Row 2 (MANIFEST ENTRIES) hash_mismatch counts should agree — both use the same per-platform logic. Total, present, and missing counts will still differ between rows because MANIFEST ENTRIES counts individual staging-path entries, which can be higher than canonical counts when one file maps to multiple staging paths.
 
 The body of the report has one row per staging path the platform expects. When a file has multiple declared MD5 variants and none match what you have stored, the report emits one row per declared MD5 so each acceptable version appears as a distinct target.
 
@@ -412,16 +410,18 @@ Columns:
 - **Known Aliases** — all filenames this file is known by
 - **Expected MD5** — the MD5 to search for (`unknown` if no MD5 is declared anywhere)
 - **Status** — `missing` / `hash_mismatch` / `unverifiable`
-- **Confidence** — for `unverifiable` entries: `high` (2+ platforms corroborate), `low` (1 platform), or `unresolved`. For `hash_mismatch` entries: same scale — `high` if 2+ platforms declare the file, `low` if only 1 platform declares it. Blank for `missing` entries. (Note: blobs where a non-MD5 hash matched a verified blob under a different canonical name are removed from the shopping list entirely — they become aliases and are functionally verified.)
+- **Confidence** — `high` (2+ platforms declare this file/version), `low` (1 platform), or `unresolved`. Applies to both `hash_mismatch` and `unverifiable` entries; blank for `missing` entries. For `hash_mismatch` rows, confidence reflects how many platforms independently declared the specific expected MD5 in that row. For `unverifiable` rows, it reflects how many platforms declare the file at all. Both are computed at report-generation time from the platforms accumulated in each shopping list entry — not from the database. (Note: blobs where a non-MD5 hash matched a verified blob under a different canonical name are removed from the shopping list entirely — they become aliases and are functionally verified.)
 - **Platforms** — which platforms need this file or version
 - **Actual MD5** — what is currently stored (`not present` for missing files)
 
 For `hash_mismatch` entries, **Expected MD5** is what you need to find; **Actual MD5** is the wrong version you currently have.
 
-Console summary:
+Console summary at end of Report:
 ```
-Global shopping list → ...\global_shopping_list.csv  (2 missing, 278 hash_mismatch  [high: 234  low: 44  unresolved: 0], 141 unverifiable  [high: 19  low: 114  unresolved: 8])
+Global shopping list → .../global_shopping_list.csv  (0 missing, 34 hash_mismatch  [high: 3  low: 31  unresolved: 0], 157 unverifiable  [high: 19  low: 138  unresolved: 0])
 ```
+
+Followed by a brief explanation of how per-platform counts, shopping list rows, and the build's global totals relate to each other.
 
 ---
 
@@ -493,7 +493,9 @@ Changes take effect for the next menu selection without restarting.
 
 ### Build counts vs report counts
 
-The build summary counts **canonicals across all platforms combined**. Each platform report counts only the canonicals that specific platform declares. These numbers will always differ — a canonical declared only by RetroDECK does not appear in the Batocera count.
+The build summary counts **canonicals across all platforms combined**. Each platform report counts only the canonicals that specific platform declares. Missing and unverifiable per-platform counts will always be lower than the global totals — a canonical declared only by RetroDECK does not appear in the Batocera count.
+
+**Hash mismatch is different**: per-platform hash_mismatch counts can be *higher* than the global total. The build's global `hash mismatch` count only covers blobs where no platform anywhere can verify the file — the hard case. A file the build calls `verified` (matched one platform's declared hash) can still be the wrong version for a *different* platform that expects a distinct regional revision. That per-platform mismatch does not affect the global count but does produce rows in the shopping list and increments the per-platform hash_mismatch counter.
 
 The blob count on the `Blobs stored:` line can exceed the canonical count. This happens when multiple verified regional variants of the same BIOS are stored (e.g. Japanese and US versions of the same file). Both count as one canonical but two blobs.
 
@@ -501,11 +503,20 @@ Canonicals whose physical bytes are stored under a different canonical name (ali
 
 ### Shopping list row count
 
-The shopping list row count shown at the end of Report will often differ from the estimate printed by Build. This is expected:
+The shopping list row count will differ from the per-platform hash_mismatch counts, and both will differ from the build's global `hash mismatch` count. These measure three different things:
 
-- **Mismatch expands** — a canonical with 3 declared MD5 variants that all fail produces 3 rows (one per version to hunt for)
+| Metric | Unit | What it counts |
+|--------|------|----------------|
+| Build `hash mismatch: N` | canonicals | Blobs no platform can verify — the hard case |
+| Per-platform `hash_mismatch=N` | canonicals | Files that platform expects but your stored version doesn't satisfy |
+| Shopping list rows | expected MD5 versions | Specific versions you need to hunt for |
+
+A single canonical that is globally verified but mismatched for Recalbox (which declares 5 regional variants, none matching) counts as 1 in the per-platform line and contributes 5 rows to the shopping list — one row per version to hunt for. The same file appearing as a mismatch on four platforms (RetroArch, Lakka, RetroPie, RomM) that all expect the same MD5 produces one shared shopping list row (not four), because the row is keyed by the expected MD5 and those platforms are listed together in the Platforms column.
+
+Additional row-count effects:
+
 - **Missing may consolidate** — multiple canonicals sharing the same expected MD5 merge into one row
-- **Unverifiable may expand** — alias canonicals whose primary blob is unverifiable each appear as their own row alongside the primary canonical, so the row count can exceed the unverifiable canonical count
+- **Unverifiable may expand** — alias canonicals whose primary blob is unverifiable each appear as their own row alongside the primary canonical
 
 ### Status is never downgraded
 
