@@ -231,13 +231,23 @@ def _files_to_check(step: str, config: configparser.ConfigParser, base_dir: str)
         platforms = [
             "retrodeck", "retropie", "batocera", "emudeck",
             "recalbox",  "retrobat", "lakka",    "retroarch",
+            "romm",      "bizhawk",
         ]
         enabled_csvs = [
             r(f"{rdir}/{p}_report.csv")
             for p in platforms
             if config.get("report", p, fallback="yes").strip().lower() in ("yes", "true", "1")
         ]
-        return [r(sqlar), r(mf)] + enabled_csvs
+        # Report always (re)writes these four shopping-list CSVs.  If a user
+        # has any of them open in a spreadsheet app the run will fail partway
+        # through with an opaque OS error, so check them up front.
+        shopping_csvs = [
+            r(f"{rdir}/global_shopping_list.csv"),
+            r(f"{rdir}/shopping_missing.csv"),
+            r(f"{rdir}/shopping_hash_mismatch.csv"),
+            r(f"{rdir}/shopping_unverifiable.csv"),
+        ]
+        return [r(sqlar), r(mf)] + enabled_csvs + shopping_csvs
 
     if step in ("backup", "restore"):
         sqlar = config.get("build", "sqlar_output", fallback="build/bios_database.sqlar")
